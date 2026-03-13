@@ -1,0 +1,51 @@
+# ============================================================
+# FlowZone Dependencies
+# ============================================================
+# Install: pip install -r requirements.txt
+
+# ---- Web Framework ----
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20   # For file uploads (voice, documents)
+
+# ---- Database ----
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0             # Async PostgreSQL driver
+alembic==1.14.1             # Database migrations (production)
+
+# ---- Configuration ----
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+
+# ---- LLM Clients (all providers) ----
+anthropic==0.42.0           # Claude API
+openai==1.58.1              # OpenAI + compatible APIs
+google-generativeai==0.8.4  # Gemini API
+groq==0.13.1                # Groq API (Llama + Whisper)
+
+# ---- Voice Pipeline ----
+edge-tts==6.1.19            # Microsoft Edge TTS (free)
+
+# ---- RAG ----
+chromadb==0.5.23            # Vector database (embedded mode)
+sentence-transformers==3.3.1  # Embedding model
+
+# ---- Document Processing ----
+pymupdf==1.25.1             # PDF text extraction
+python-docx==1.1.2          # Word doc text extraction
+
+# ---- Google Drive Integration ----
+google-api-python-client==2.159.0
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.1
+
+# ---- Utilities ----
+httpx==0.28.1               # Async HTTP client (for API calls)
+python-jose[cryptography]==3.3.0  # JWT tokens (for auth)
+passlib[bcrypt]==1.7.4      # Password hashing (for mentor auth)
+
+# ---- Testing ----
+pytest==8.3.4
+pytest-asyncio==0.25.0
+httpx==0.28.1               # Also used for test client

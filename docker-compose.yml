@@ -1,0 +1,65 @@
+# ============================================================
+# FlowZone — Local Development Stack
+# ============================================================
+# Usage:
+#   docker compose up        → Start app + postgres
+#   docker compose up -d     → Start in background
+#   docker compose down      → Stop everything
+#   docker compose down -v   → Stop + delete database volume
+#   docker compose logs -f   → Follow logs
+#
+# The app auto-reloads on code changes (volume mount + --reload)
+# ============================================================
+
+services:
+  # ---- PostgreSQL Database ----
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: flowzone
+      POSTGRES_PASSWORD: flowzone_dev
+      POSTGRES_DB: flowzone
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowzone"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---- FlowZone API ----
+  app:
+    container_name: flowzone-app-dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount code for live reload in development
+      - .:/app
+      # Persist ChromaDB data between restarts
+      - chroma_data:/app/data/chromadb
+    environment:
+      - APP_ENV=development
+      - APP_DEBUG=true
+      - DATABASE_URL=postgresql+asyncpg://flowzone:flowzone_dev@db:5432/flowzone
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    # Override CMD for development (with auto-reload)
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  postgres_data:
+  chroma_data:

@@ -1,0 +1,48 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# ---- Virtual Environment ----
+venv/
+.venv/
+env/
+
+# ---- Environment Variables ----
+.env
+.env.local
+.env.production
+
+# ---- Database ----
+*.db
+*.sqlite3
+
+# ---- IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- Docker ----
+docker-compose.override.yml
+
+# ---- ChromaDB Persistence ----
+data/chromadb/
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+
+# ---- Testing ----
+.coverage
+htmlcov/
+.pytest_cache/
+
+# ---- Uploads ----
+data/uploads/
