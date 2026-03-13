@@ -25,11 +25,13 @@ import re
 import io
 import uuid
 import logging
+from datetime import datetime
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.rag import embedding_service, chroma_store
 from app.services.model_router import model_router, LLMMessage
+from app.models.document_ref import DocumentRef
 
 logger = logging.getLogger(__name__)
 
@@ -408,4 +410,59 @@ async def ingest_text_directly(
     )
 
     return {"chunks": len(chunks), "document_id": document_id, "collection": collection_name}
+
+
+async def ingest_user_document(
+    *,
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    file_bytes: bytes,
+    filename: str,
+    mime_type: Optional[str],
+    document_type: str,
+) -> dict:
+    """
+    Convenience wrapper for uploading a single user document.
+
+    - Creates a `DocumentRef` row for the user
+    - Runs the full ingestion pipeline into the user's ChromaDB collection
+    - Updates the `DocumentRef` with chunk count, collection name, and metadata
+    """
+    document_uuid = uuid.uuid4()
+    collection_name = f"user_{user_id}_documents"
+
+    # Create the DB reference first (pending)
+    doc_ref = DocumentRef(
+        id=document_uuid,
+        user_id=user_id,
+        filename=filename,
+        mime_type=mime_type,
+        document_type=document_type,
+        chroma_collection=collection_name,
+        processing_status="processing",
+        last_processed=datetime.utcnow(),
+    )
+    db.add(doc_ref)
+    await db.flush()
+
+    # Run the ingestion pipeline (no raw text stored in Chroma)
+    result = await ingest_document(
+        file_bytes=file_bytes,
+        filename=filename,
+        collection_name=collection_name,
+        document_id=str(document_uuid),
+        document_type=document_type,
+        db=db,
+        user_id=str(user_id),
+        extra_metadata={"user_id": str(user_id)},
+        store_text=False,
+    )
+
+    # Update reference with results
+    doc_ref.chunk_count = result.get("chunks", 0)
+    doc_ref.extracted_metadata = result.get("metadata")
+    doc_ref.processing_status = "completed" if doc_ref.chunk_count else "failed"
+    doc_ref.last_processed = datetime.utcnow()
+
+    return {"document_id": str(document_uuid), "chunks": doc_ref.chunk_count}
 
