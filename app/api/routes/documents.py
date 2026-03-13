@@ -25,7 +25,7 @@ from app.schemas.api import DocumentRefResponse
 from app.services.rag.document_processor import ingest_user_document
 from app.services.rag import chroma_store
 from app.services.rag.embedding_service import embed_text
-from app.services.rag.retriever import retrieve_global_kb
+from app.services.rag.retriever import _search_knowledge_base  # internal helper
 from app.services.rag.google_drive import (
     get_oauth_authorization_url,
     exchange_code_for_tokens,
@@ -138,27 +138,33 @@ async def rag_search(
 ):
     """
     Direct RAG search primarily for development/testing.
-    Searches the global KB collections.
+    Searches the global KB collections using the shared retriever logic.
     """
     try:
         char_enum = Character(character)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Unknown character: {character}")
 
-    chunks = await retrieve_global_kb(
-        query=q,
+    # Embed the query and use the internal knowledge-base search helper
+    query_embedding = embed_text(q)
+
+    # Optionally use topic as a metadata filter hint
+    metadata_filter = {"topic": topic} if topic else None
+    texts = _search_knowledge_base(
+        query_embedding=query_embedding,
         character=char_enum,
-        topic=topic,
+        metadata_filter=metadata_filter,
     )
+
     return {
         "query": q,
         "topic": topic,
         "results": [
             {
-                "text": c.text,
-                "metadata": c.metadata,
+                "text": t,
+                "metadata": {},
             }
-            for c in chunks
+            for t in texts
         ],
     }
 
