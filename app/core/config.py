@@ -47,7 +47,10 @@ class Settings(BaseSettings):
     app_port: int = 8000
 
     # ---- Database ----
-    database_url: str = "postgresql+asyncpg://flowzone:flowzone_dev@db:5432/flowzone"
+    # Use Field so env var DATABASE_URL cleanly overrides the default.
+    database_url: str = Field(
+        default="postgresql+asyncpg://flowzone:flowzone_dev@db:5432/flowzone"
+    )
 
     # ---- LLM API Keys ----
     # Paid providers (used strategically by the Model Router)
