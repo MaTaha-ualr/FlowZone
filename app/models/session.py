@@ -11,7 +11,7 @@ Sessions are:
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import String, Integer, Float, Boolean, DateTime, Text, ForeignKey
 from sqlalchemy import Enum as SAEnum, JSON
 from sqlalchemy.dialects.postgresql import UUID
@@ -35,7 +35,7 @@ class Session(Base):
     session_type: Mapped[str] = mapped_column(String(20), default="flowquest")
 
     # ---- Timing ----
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
