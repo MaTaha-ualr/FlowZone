@@ -67,6 +67,7 @@ async def seed():
             has_crisis_history=False,
         )
         db.add(marcus)
+        await db.flush()  # Flush user to DB before adding child records
         print(f"  Added: Marcus Cole ({marcus_id})")
 
         # -- School Data --

@@ -65,6 +65,7 @@ async def seed_personas():
             has_crisis_history=True,
         )
         db.add(aaliyah)
+        await db.flush()  # Flush user to DB before child records
         print(f"  Added: Aaliyah Jenkins ({aaliyah_id})")
 
         # School data
@@ -218,6 +219,7 @@ async def seed_personas():
             has_crisis_history=False,
         )
         db.add(jordan)
+        await db.flush()  # Flush user to DB before child records
         print(f"  Added: Jordan Rivera ({jordan_id})")
 
         # School data
@@ -345,6 +347,7 @@ async def seed_personas():
             has_crisis_history=False,
         )
         db.add(deshawn)
+        await db.flush()  # Flush user to DB before child records
         print(f"  Added: DeShawn Mitchell ({deshawn_id})")
 
         # School data — was a star athlete, now spiraling
@@ -482,6 +485,7 @@ async def seed_personas():
             has_crisis_history=False,
         )
         db.add(kaya)
+        await db.flush()  # Flush user to DB before child records
         print(f"  Added: Kaya Thompson ({kaya_id})")
 
         # School data — hardworking but behind
