@@ -15,7 +15,7 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import AsyncSessionLocal
+from app.database import async_session
 from app.services.rag.document_processor import ingest_user_document
 
 
@@ -47,7 +47,7 @@ async def main() -> None:
         print("SAMPLE_USER_ID is not set; skipping user document seeding.")
         return
 
-    async with AsyncSessionLocal() as session:
+    async with async_session() as session:
         await _seed_for_user(session, uuid.UUID(SAMPLE_USER_ID))
         print("User documents seeding completed.")
 

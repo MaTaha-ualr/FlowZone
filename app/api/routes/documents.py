@@ -59,7 +59,7 @@ async def upload_document(
     )
     await db.flush()
 
-    doc = await db.get(DocumentRef, uuid.UUID(result.document_id))
+    doc = await db.get(DocumentRef, uuid.UUID(result["document_id"]))
     if not doc:
         raise HTTPException(status_code=500, detail="Document reference not found after ingest")
 
@@ -125,9 +125,8 @@ async def rag_stats():
     Basic RAG stats.
     For now, returns the names of known collections; deeper stats can be added later.
     """
-    client = chroma_store.get_client()
-    collections = client.list_collections()
-    return {"collections": [c.name for c in collections]}
+    collections = chroma_store.list_collections()
+    return {"collections": collections}
 
 
 @router.get("/rag/search")

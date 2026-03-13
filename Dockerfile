@@ -34,8 +34,8 @@ RUN useradd --create-home --shell /bin/bash flowzone
 RUN mkdir -p /app/data/chromadb /app/data/uploads && \
     chown -R flowzone:flowzone /app
 
-# Copy application code
-COPY . .
+# Copy application code (owned by flowzone user)
+COPY --chown=flowzone:flowzone . .
 
 # Switch to non-root user
 USER flowzone
@@ -43,11 +43,12 @@ USER flowzone
 # Expose port (Railway auto-detects this)
 EXPOSE 8000
 
-# Health check (Railway and Docker both use this)
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+# Health check for local Docker Compose
+# Railway uses its own healthcheck via railway.json
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:' + __import__('os').environ.get('PORT','8000') + '/health')" || exit 1
 
 # Run with uvicorn
 # --workers 1 is fine for 5 concurrent users on Railway's small instances
 # Scale workers when moving to AWS ECS
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]

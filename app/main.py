@@ -57,10 +57,13 @@ async def lifespan(app: FastAPI):
     print("  Database tables created/verified.")
 
     # Check which LLM providers are configured
-    provider_status = await model_router.check_all_providers()
-    for provider, status in provider_status.items():
-        icon = "✓" if status == "available" else "✗" if status == "no_api_key" else "⚠"
-        print(f"  {icon} {provider}: {status}")
+    try:
+        provider_status = await model_router.check_all_providers()
+        for provider, status in provider_status.items():
+            icon = "✓" if status == "available" else "✗" if status == "no_api_key" else "⚠"
+            print(f"  {icon} {provider}: {status}")
+    except Exception as e:
+        print(f"  ⚠ Provider health check skipped: {e}")
 
     print("  FlowZone is ready.")
     print("=" * 60)

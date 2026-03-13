@@ -11,7 +11,7 @@ Architecture Note:
 """
 
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, model_validator
 from typing import Optional
 from enum import Enum
 
@@ -102,6 +102,19 @@ class Settings(BaseSettings):
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
     }
+
+    @model_validator(mode="after")
+    def fix_database_url(self) -> "Settings":
+        """
+        Railway sets DATABASE_URL as postgresql:// but asyncpg needs
+        postgresql+asyncpg://. Auto-convert at startup.
+        """
+        url = self.database_url
+        if url.startswith("postgres://"):
+            self.database_url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://") and "+asyncpg" not in url:
+            self.database_url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return self
 
 
 # Singleton instance — import this everywhere

@@ -1,20 +1,23 @@
 """
-Seed the Global Knowledge Base (System 1).
+Seed the Global Knowledge Base (all 4 collections).
 
-Usage (from project root inside Docker):
+Usage:
     docker compose exec app python -m scripts.seed_knowledge_base
 """
 
 import asyncio
+import sys
 
-from app.services.rag.knowledge_base import seed_minimal_therapeutic_kb
+sys.path.insert(0, ".")
+
+from app.services.rag.knowledge_base import seed_all_knowledge
 
 
 async def main() -> None:
-    seed_minimal_therapeutic_kb()
-    print("Seeded minimal therapeutic knowledge base.")
+    print("Seeding FlowZone knowledge base...")
+    total = await seed_all_knowledge()
+    print(f"Done. {total} total chunks seeded.")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-
