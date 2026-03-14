@@ -1,6 +1,6 @@
 """Tests for Trust Score Calculator."""
 import pytest
-from datetime import datetime, date, timedelta, timezone
+from datetime import datetime, date, timedelta
 from uuid import uuid4
 
 from app.models.user import User
@@ -66,21 +66,21 @@ class TestStreaks:
 
     @pytest.mark.asyncio
     async def test_same_day(self, db_session):
-        u = User(id=uuid4(), name="S2", age=15, check_in_streak=5, last_check_in=datetime.now(timezone.utc))
+        u = User(id=uuid4(), name="S2", age=15, check_in_streak=5, last_check_in=datetime.utcnow())
         db_session.add(u); await db_session.flush()
         assert await _update_streak(u, db_session) == 5
 
     @pytest.mark.asyncio
     async def test_consecutive(self, db_session):
         u = User(id=uuid4(), name="S3", age=15, check_in_streak=3,
-                 last_check_in=datetime.now(timezone.utc) - timedelta(days=1))
+                 last_check_in=datetime.utcnow() - timedelta(days=1))
         db_session.add(u); await db_session.flush()
         assert await _update_streak(u, db_session) == 4
 
     @pytest.mark.asyncio
     async def test_missed_day_resets(self, db_session):
         u = User(id=uuid4(), name="S4", age=15, check_in_streak=10,
-                 last_check_in=datetime.now(timezone.utc) - timedelta(days=2))
+                 last_check_in=datetime.utcnow() - timedelta(days=2))
         db_session.add(u); await db_session.flush()
         assert await _update_streak(u, db_session) == 1
 
@@ -90,7 +90,7 @@ class TestRecalculation:
     async def test_positive_session(self, db_session):
         u = User(id=uuid4(), name="Pos", age=15, current_trust_score=100.0,
                  current_tier=TrustTier.THE_WATCH, check_in_streak=2,
-                 last_check_in=datetime.now(timezone.utc) - timedelta(days=1))
+                 last_check_in=datetime.utcnow() - timedelta(days=1))
         db_session.add(u); await db_session.flush()
         s = Session(id=uuid4(), user_id=u.id, session_type="flowquest",
                     character_active=Character.CHALLENGER, vibe_selected=Vibe.ANGRY,

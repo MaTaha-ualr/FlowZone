@@ -7,7 +7,7 @@ mocked LLM providers, and sample data factories.
 
 import pytest
 import asyncio
-from datetime import datetime, date, timezone
+from datetime import datetime, date
 from uuid import uuid4
 from unittest.mock import AsyncMock, patch
 
@@ -160,7 +160,7 @@ async def completed_intake_user(db_session):
         current_character=Character.CHALLENGER,
         current_tier=TrustTier.THE_WATCH,
         check_in_streak=3,
-        last_check_in=datetime.now(timezone.utc),
+        last_check_in=datetime.utcnow(),
         safe_harbor_floor=SafeHarborLevel.YELLOW,
         has_trauma_history=True,
     )

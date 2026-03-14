@@ -13,7 +13,7 @@ Session Logic:
 """
 
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
@@ -60,7 +60,7 @@ async def start_or_resume_session(
         )
 
     # ---- Check for Existing Active Session ----
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     timeout_threshold = now - timedelta(hours=settings.session_timeout_hours)
 
     result = await db.execute(
@@ -160,11 +160,11 @@ async def end_session(
     if not session.is_active:
         raise HTTPException(status_code=400, detail="Session already ended")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     session.is_active = False
     session.ended_at = now
     if session.started_at:
-        delta = now - session.started_at.replace(tzinfo=timezone.utc)
+        delta = now - session.started_at
         session.duration_minutes = int(delta.total_seconds() / 60)
 
     # Release concurrency slot

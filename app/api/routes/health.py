@@ -8,7 +8,7 @@ This is the FIRST endpoint to get live. If this works, your
 deployment pipeline works.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -42,7 +42,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         version=APP_VERSION,
         environment=settings.app_env.value,
         database=db_status,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.utcnow(),
     )
 
 
@@ -78,5 +78,5 @@ async def detailed_health_check(db: AsyncSession = Depends(get_db)):
         model_router=model_router_status,
         budget=budget_status,
         active_sessions=concurrency_guard.active_count,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.utcnow(),
     )

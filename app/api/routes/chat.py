@@ -16,7 +16,7 @@ The Model Router handles:
 
 import uuid
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -273,7 +273,7 @@ async def send_message(
         safe_harbor_level=session.safe_harbor_level,
         trust_score_delta=trust_delta,
         action_item=None,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.utcnow(),
     )
 
 

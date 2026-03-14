@@ -27,7 +27,7 @@ Architecture Note:
 """
 
 import logging
-from datetime import datetime, date, timedelta, timezone
+from datetime import datetime, date, timedelta
 from typing import Optional
 from uuid import UUID
 
@@ -122,7 +122,7 @@ async def recalculate_after_session(
     )
     first_session_date = first_session_result.scalar()
     if first_session_date:
-        days_active = max(1, (datetime.now(timezone.utc) - first_session_date.replace(tzinfo=timezone.utc)).days)
+        days_active = max(1, (datetime.utcnow() - first_session_date).days)
     else:
         days_active = 1
 
@@ -226,7 +226,7 @@ async def _update_streak(user: User, db: AsyncSession) -> int:
     if last_checkin is None:
         # First ever check-in
         user.check_in_streak = 1
-        user.last_check_in = datetime.now(timezone.utc)
+        user.last_check_in = datetime.utcnow()
         return 1
 
     last_date = last_checkin.date() if hasattr(last_checkin, 'date') else last_checkin
@@ -242,7 +242,7 @@ async def _update_streak(user: User, db: AsyncSession) -> int:
         # Missed one or more days — streak resets
         user.check_in_streak = 1
 
-    user.last_check_in = datetime.now(timezone.utc)
+    user.last_check_in = datetime.utcnow()
     return user.check_in_streak
 
 
@@ -271,7 +271,7 @@ async def apply_credit_decay(db: AsyncSession) -> list[dict]:
     Should be called daily via a cron job or background task.
     Returns list of affected users.
     """
-    threshold = datetime.now(timezone.utc) - timedelta(
+    threshold = datetime.utcnow() - timedelta(
         hours=TRUST_SCORE_WEIGHTS["decay_threshold_hours"]
     )
     decay_rate = TRUST_SCORE_WEIGHTS["credit_decay_rate"]
@@ -294,7 +294,7 @@ async def apply_credit_decay(db: AsyncSession) -> list[dict]:
         # Recalculate tier
         user.current_tier = _calculate_tier(user.current_trust_score)
 
-        days_silent = (datetime.now(timezone.utc) - user.last_check_in.replace(tzinfo=timezone.utc)).days
+        days_silent = (datetime.utcnow() - user.last_check_in).days
 
         affected.append({
             "user_id": str(user.id),
@@ -361,7 +361,7 @@ async def redeem_vouch(
         }
 
     # Create vouch
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=VOUCH_CONFIG["expiry_hours"])
+    expires_at = datetime.utcnow() + timedelta(hours=VOUCH_CONFIG["expiry_hours"])
     vouch = Vouch(
         user_id=user_id,
         vouch_type=vouch_type,
@@ -397,7 +397,7 @@ async def expire_vouches(db: AsyncSession) -> int:
     Expire vouches past their 48-hour window.
     Should run via cron or background task.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     result = await db.execute(
         select(Vouch).where(and_(
             Vouch.status == "active",

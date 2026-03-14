@@ -8,7 +8,7 @@ These are for your team to monitor the system during demos and pilot.
 In production, these would be behind authentication.
 """
 
-from datetime import datetime, timezone, date
+from datetime import datetime, date
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func

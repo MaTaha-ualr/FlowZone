@@ -16,7 +16,7 @@ Architecture Note:
 """
 
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from enum import Enum
 from dataclasses import dataclass
 from typing import Optional
