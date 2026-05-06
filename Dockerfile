@@ -40,6 +40,8 @@ COPY --chown=flowzone:flowzone . .
 # Switch to non-root user
 USER flowzone
 
+ENV PYTHONPATH=/app
+
 # Expose port (Railway auto-detects this)
 EXPOSE 8000
 
