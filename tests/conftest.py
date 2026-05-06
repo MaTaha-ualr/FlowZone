@@ -8,9 +8,10 @@ mocked LLM providers, and sample data factories.
 import pytest
 import asyncio
 from datetime import datetime, date
-from uuid import uuid4
+from uuid import UUID, uuid4
 from unittest.mock import AsyncMock, patch
 
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from httpx import AsyncClient, ASGITransport
 
@@ -21,6 +22,7 @@ from app.models import (
     SchoolData, DocumentRef, ApiUsage, Vouch, Pattern,
 )
 from app.core.constants import Character, Vibe, SafeHarborLevel, TrustTier
+from app.core.security import get_current_user
 from app.services.model_router.base_provider import LLMResponse
 
 
@@ -65,7 +67,28 @@ async def client(db_engine):
                 await session.rollback()
                 raise
 
+    async def override_get_current_user(
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+    ):
+        user_id = request.headers.get("X-User-ID")
+        if user_id:
+            try:
+                user = await db.get(User, UUID(user_id))
+                if user and user.is_active:
+                    return user
+            except ValueError:
+                pass
+
+        return User(
+            id=UUID("00000000-0000-0000-0000-000000000001"),
+            name="Test Auth User",
+            age=18,
+            is_active=True,
+        )
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac

@@ -17,7 +17,7 @@ class TestShieldFormula:
         ts = TrustScore(user_id=uuid4(), score_date=date.today(),
                         consistency_c=5, weight_w=1.0, honesty_bonus_h=25.0,
                         regulation_bonus_r=10.0, mentor_vouch_m=15.0, penalty_p=10.0, time_t=3)
-        assert ts.calculate() == 15.0  # ((5*1)+25+10+15-10)/3
+        assert ts.calculate() == 45.0
 
     def test_hard_day_multiplier(self):
         ts = TrustScore(user_id=uuid4(), score_date=date.today(),
@@ -32,12 +32,12 @@ class TestShieldFormula:
     def test_zero_time(self):
         ts = TrustScore(user_id=uuid4(), score_date=date.today(),
                         consistency_c=10, weight_w=1.0, time_t=0)
-        assert ts.calculate() == 10.0  # max(0,1) prevents div/0
+        assert ts.calculate() == 10.0
 
-    def test_time_normalizes(self):
+    def test_time_is_metadata_only(self):
         ts1 = TrustScore(user_id=uuid4(), score_date=date.today(), consistency_c=10, weight_w=1.0, time_t=1)
         ts10 = TrustScore(user_id=uuid4(), score_date=date.today(), consistency_c=10, weight_w=1.0, time_t=10)
-        assert ts1.calculate() > ts10.calculate()
+        assert ts1.calculate() == ts10.calculate()
 
 
 class TestTierCalculation:

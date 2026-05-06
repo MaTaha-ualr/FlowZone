@@ -13,18 +13,19 @@ async def reset():
 async def _chat_session(client):
     c = await client.post("/api/v1/users", json={"name": "Chat", "age": 15, "user_type": "juvenile_justice", "has_probation": True})
     uid = c.json()["id"]
+    headers = {"X-User-ID": uid}
     await client.post(f"/api/v1/users/{uid}/intake", json={
         "q1_intent": "check_box", "q2_heat_level": 8,
         "q3_trap": "friends", "q4_autonomy_prize": "curfew", "q5_collaboration": "well_see",
-    })
-    s = await client.post(f"/api/v1/sessions/{uid}")
-    return uid, s.json()["id"]
+    }, headers=headers)
+    s = await client.post(f"/api/v1/sessions/{uid}", headers=headers)
+    return uid, s.json()["id"], headers
 
 
 @pytest.mark.asyncio
 async def test_send_message(client, mock_model_router, mock_mask_detection, mock_extract_session_data, mock_trust_calculator):
-    uid, sid = await _chat_session(client)
-    r = await client.post(f"/api/v1/chat/{sid}", json={"content": "School was whatever.", "vibe": "solid"})
+    uid, sid, headers = await _chat_session(client)
+    r = await client.post(f"/api/v1/chat/{sid}", json={"content": "School was whatever.", "vibe": "solid"}, headers=headers)
     assert r.status_code == 200
     d = r.json()
     assert "content" in d
@@ -34,18 +35,18 @@ async def test_send_message(client, mock_model_router, mock_mask_detection, mock
 
 @pytest.mark.asyncio
 async def test_chat_sets_vibe(client, mock_model_router, mock_mask_detection, mock_extract_session_data, mock_trust_calculator):
-    uid, sid = await _chat_session(client)
-    await client.post(f"/api/v1/chat/{sid}", json={"content": "Angry today.", "vibe": "angry"})
-    r = await client.get(f"/api/v1/sessions/{uid}/current")
+    uid, sid, headers = await _chat_session(client)
+    await client.post(f"/api/v1/chat/{sid}", json={"content": "Angry today.", "vibe": "angry"}, headers=headers)
+    r = await client.get(f"/api/v1/sessions/{uid}/current", headers=headers)
     assert r.json()["vibe_selected"] == "angry"
 
 
 @pytest.mark.asyncio
 async def test_chat_history(client, mock_model_router, mock_mask_detection, mock_extract_session_data, mock_trust_calculator):
-    _, sid = await _chat_session(client)
-    await client.post(f"/api/v1/chat/{sid}", json={"content": "First", "vibe": "solid"})
-    await client.post(f"/api/v1/chat/{sid}", json={"content": "Second"})
-    r = await client.get(f"/api/v1/chat/{sid}/history")
+    _, sid, headers = await _chat_session(client)
+    await client.post(f"/api/v1/chat/{sid}", json={"content": "First", "vibe": "solid"}, headers=headers)
+    await client.post(f"/api/v1/chat/{sid}", json={"content": "Second"}, headers=headers)
+    r = await client.get(f"/api/v1/chat/{sid}/history", headers=headers)
     assert r.status_code == 200
     assert r.json()["total_messages"] >= 4
 
@@ -58,6 +59,6 @@ async def test_chat_inactive_session(client):
 
 @pytest.mark.asyncio
 async def test_chat_empty_message(client):
-    _, sid = await _chat_session(client)
-    r = await client.post(f"/api/v1/chat/{sid}", json={"content": ""})
+    _, sid, headers = await _chat_session(client)
+    r = await client.post(f"/api/v1/chat/{sid}", json={"content": ""}, headers=headers)
     assert r.status_code == 422

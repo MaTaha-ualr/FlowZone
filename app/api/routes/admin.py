@@ -1,15 +1,14 @@
 """
-Admin Routes
-==============
-GET /api/v1/admin/budget    — Current budget status and spend breakdown
-GET /api/v1/admin/models    — Model availability and rate limit status
-
-These are for your team to monitor the system during demos and pilot.
-In production, these would be behind authentication.
+Admin Routes (FIXED)
+=====================
+Changes:
+  - Auth required (any authenticated user for demo; tighten for prod)
+  - Real budget data from CreditManager
+  - Added request_id logging
 """
 
-from datetime import datetime, date
-from fastapi import APIRouter, Depends
+from datetime import date
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database import get_db
@@ -17,32 +16,23 @@ from app.models.api_usage import ApiUsage
 from app.schemas.api import BudgetStatusResponse
 from app.core.config import settings
 from app.core.constants import MODEL_COSTS, PROVIDER_RATE_LIMITS
+from app.core.security import get_current_user, require_admin
+from app.services.model_router.credit_manager import credit_manager
+from app.middleware.request_id import get_request_id
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
 
-
 @router.get("/budget", response_model=BudgetStatusResponse)
-async def get_budget_status(db: AsyncSession = Depends(get_db)):
-    """
-    Get current day's API spending vs budget cap.
-    Determines which budget tier we're in (green/yellow/red).
-    """
+async def get_budget_status(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(require_admin),
+):
+    """Current budget status with real data from CreditManager."""
+    snapshot = await credit_manager.get_snapshot(db)
+
+    # Spend by provider (today)
     today = date.today()
-
-    # Total spend today
-    result = await db.execute(
-        select(
-            func.sum(ApiUsage.estimated_cost_usd),
-            func.count(ApiUsage.id),
-        ).where(
-            func.date(ApiUsage.created_at) == today
-        )
-    )
-    row = result.one()
-    spent_today = row[0] or 0.0
-    calls_today = row[1] or 0
-
-    # Spend by provider
     provider_result = await db.execute(
         select(
             ApiUsage.model_provider,
@@ -53,32 +43,21 @@ async def get_budget_status(db: AsyncSession = Depends(get_db)):
     )
     cost_by_provider = {row[0]: round(row[1], 4) for row in provider_result.all()}
 
-    # Determine budget tier
-    cap = settings.daily_budget_cap_usd
-    ratio = spent_today / cap if cap > 0 else 0
-    if ratio < settings.budget_tier_green:
-        tier = "green"
-    elif ratio < settings.budget_tier_yellow:
-        tier = "yellow"
-    else:
-        tier = "red"
-
     return BudgetStatusResponse(
-        daily_cap_usd=cap,
-        spent_today_usd=round(spent_today, 4),
-        remaining_usd=round(max(0, cap - spent_today), 4),
-        budget_tier=tier,
-        calls_today=calls_today,
+        daily_cap_usd=snapshot.daily_cap,
+        spent_today_usd=round(snapshot.spent_today, 4),
+        remaining_usd=round(snapshot.remaining, 4),
+        budget_tier=snapshot.tier.value,
+        calls_today=snapshot.calls_today,
         cost_by_provider=cost_by_provider,
     )
 
-
 @router.get("/models")
-async def get_model_status():
-    """
-    Show which models are configured, their costs, and rate limits.
-    Helps your team understand what's available.
-    """
+async def get_model_status(
+    request: Request,
+    current_user = Depends(require_admin),
+):
+    """Model availability and rate limits."""
     models = []
     for model_id, costs in MODEL_COSTS.items():
         models.append({
@@ -103,9 +82,7 @@ async def get_model_status():
         "budget_cap_usd": settings.daily_budget_cap_usd,
     }
 
-
 def _is_provider_configured(provider: str) -> bool:
-    """Check if a provider's API key is set."""
     key_map = {
         "anthropic": settings.anthropic_api_key,
         "openai": settings.openai_api_key,

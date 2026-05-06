@@ -1,17 +1,16 @@
 """
-User Routes
-=============
-POST   /api/v1/users              — Create a new youth user
-GET    /api/v1/users              — List all users
-GET    /api/v1/users/{user_id}    — Get user details
-POST   /api/v1/users/{user_id}/intake  — Submit Strategic Intake answers
-DELETE /api/v1/users/{user_id}    — Deactivate user
+User Routes (FIXED)
+====================
+Changes:
+  - Pagination on list_users
+  - Auth required for all routes
+  - Demo mode support via X-User-ID
 """
 
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.database import get_db
 from app.models.user import User
 from app.schemas.api import (
@@ -22,13 +21,17 @@ from app.core.constants import (
     Character, CHARACTER_ASSIGNMENT_RULES, Vibe,
     INTAKE_SCORING, SafeHarborLevel
 )
+from app.core.security import get_current_user
 
 router = APIRouter(prefix="/api/v1/users", tags=["Users"])
 
-
 @router.post("", response_model=UserResponse, status_code=201)
-async def create_user(data: UserCreate, db: AsyncSession = Depends(get_db)):
-    """Register a new youth user in the system."""
+async def create_user(
+    data: UserCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Register a new youth user."""
     user = User(
         name=data.name,
         age=data.age,
@@ -43,54 +46,67 @@ async def create_user(data: UserCreate, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.flush()
     await db.refresh(user)
+    await db.commit()
     return user
 
-
 @router.get("", response_model=UserListResponse)
-async def list_users(db: AsyncSession = Depends(get_db)):
-    """List all active users."""
+async def list_users(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List active users with pagination."""
     result = await db.execute(
-        select(User).where(User.is_active == True).order_by(User.created_at.desc())
+        select(User)
+        .where(User.is_active == True)
+        .order_by(User.created_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
     users = result.scalars().all()
-    return UserListResponse(users=users, total=len(users))
 
+    # Total count for pagination metadata
+    count_result = await db.execute(
+        select(func.count()).select_from(User).where(User.is_active == True)
+    )
+    total = count_result.scalar()
+
+    return UserListResponse(users=users, total=total)
 
 @router.get("/{user_id}", response_model=UserResponse)
-async def get_user(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Get a single user's details."""
     user = await db.get(User, user_id)
     if not user or not user.is_active:
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
-
 @router.post("/{user_id}/intake", response_model=IntakeResponse)
 async def submit_intake(
     user_id: uuid.UUID,
     answers: IntakeAnswers,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """
-    Submit the 5-question Strategic Intake.
-    Calculates baseline trust score and assigns initial character.
-    """
+    """Submit the 5-question Strategic Intake."""
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if user.intake_completed:
         raise HTTPException(status_code=400, detail="Intake already completed")
 
-    # ---- Score Calculation ----
+    # Score Calculation
     score = 0.0
-
-    # Q1: Intent Check
     if answers.q1_intent == "check_box":
-        score += INTAKE_SCORING["q1_check_box"]  # +50 honesty bonus
+        score += INTAKE_SCORING["q1_check_box"]
     else:
-        score += INTAKE_SCORING["q1_win_freedom"]  # +10
+        score += INTAKE_SCORING["q1_win_freedom"]
 
-    # Q2: Heat Level → Weight Multiplier
     heat = answers.q2_heat_level
     if heat >= INTAKE_SCORING["q2_high_heat_threshold"]:
         weight = INTAKE_SCORING["q2_high_heat_multiplier"]
@@ -99,19 +115,15 @@ async def submit_intake(
     else:
         weight = 1.0
 
-    # Q3: Trap
     if answers.q3_trap != "dont_know":
-        score += INTAKE_SCORING["q3_specific_trap"]  # +25
+        score += INTAKE_SCORING["q3_specific_trap"]
     else:
-        score += INTAKE_SCORING["q3_dont_know"]  # +5
+        score += INTAKE_SCORING["q3_dont_know"]
 
-    # Q4: Autonomy Prize
-    score += INTAKE_SCORING["q4_any_answer"]  # +10
+    score += INTAKE_SCORING["q4_any_answer"]
 
-    # ---- Character Assignment ----
+    # Character Assignment
     heat_category = "high" if heat >= 7 else "low"
-
-    # Determine dominant vibe from intake signals
     if answers.q1_intent == "check_box" and heat >= 7:
         dominant_vibe = Vibe.GUARDED
     elif heat >= 8:
@@ -123,10 +135,10 @@ async def submit_intake(
 
     character = CHARACTER_ASSIGNMENT_RULES.get(
         (heat_category, dominant_vibe),
-        Character.NAVIGATOR  # Safe fallback
+        Character.NAVIGATOR
     )
 
-    # ---- Update User ----
+    # Update User
     user.intake_completed = True
     user.intake_answers = {
         "q1_intent": answers.q1_intent,
@@ -141,11 +153,11 @@ async def submit_intake(
     user.weight_multiplier = weight
     user.current_character = character
 
-    # Start streak if Q5 = "yes"
     if answers.q5_collaboration == "yes":
         user.check_in_streak = 1
 
     await db.flush()
+    await db.commit()
 
     return IntakeResponse(
         user_id=user.id,
@@ -154,15 +166,19 @@ async def submit_intake(
         heat_level=heat,
         weight_multiplier=weight,
         message=f"Character assigned: {character.value}. Baseline score: {score}. "
-                f"{'Streak started.' if answers.q5_collaboration == 'yes' else 'No streak yet — trust must be earned.'}"
+        f"{'Streak started.' if answers.q5_collaboration == 'yes' else 'No streak yet — trust must be earned.'}"
     )
 
-
 @router.delete("/{user_id}", status_code=204)
-async def deactivate_user(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    """Soft-delete a user (deactivate, don't remove data)."""
+async def deactivate_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Soft-delete a user."""
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user.is_active = False
     await db.flush()
+    await db.commit()
