@@ -259,6 +259,10 @@ export function searchDocuments(_userId: string, query: string) {
   return get(`/api/v1/rag/search?q=${encodeURIComponent(query)}`);
 }
 
+export function getMentorRoster() {
+  return get("/api/v1/mentors/roster");
+}
+
 export function getMentorDashboard(userId: string) {
   return get(`/api/v1/mentors/dashboard/${userId}`);
 }

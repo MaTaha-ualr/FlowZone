@@ -241,6 +241,49 @@ export interface MentorDashboardData {
   youth_list: MentorYouthItem[]
 }
 
+export interface MentorRosterResponse {
+  total_youth: number
+  active_sessions: number
+  alerts: number
+  avg_trust: number
+  youth: MentorYouthItem[]
+}
+
+export interface MentorYouthDashboard {
+  user: {
+    id: string
+    name: string
+    age: number
+    city?: string | null
+    state?: string | null
+    school_name?: string | null
+    user_type: string
+    current_character: CharacterEnum
+    current_character_name: string
+    current_trust_score: number
+    display_score: number
+    current_tier: string
+    check_in_streak: number
+    safe_harbor_floor: SafeHarborEnum
+  }
+  school: {
+    gpa: number | null
+    attendance_rate: number | null
+    classes_failing: string[]
+    has_iep: boolean
+  } | null
+  trust_score_trend: Array<{ date: string; score: number }>
+  recent_notes: Array<{
+    id: string
+    mentor: string | null
+    type: string
+    content: string
+    vouch_points: number
+    risk_flag_level: string | null
+    date: string | null
+  }>
+}
+
 export interface MentorYouthItem {
   id: string
   name: string
