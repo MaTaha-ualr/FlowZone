@@ -18,8 +18,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
+# ---- Stage 2: Frontend Builder ----
+FROM node:20-slim AS frontend_builder
 
-# ---- Stage 2: Runtime ----
+WORKDIR /frontend
+
+COPY frontend/package*.json ./
+RUN npm ci
+
+COPY frontend/ ./
+ENV VITE_API_URL=
+RUN npm run build
+
+
+# ---- Stage 3: Runtime ----
 FROM python:3.12-slim AS runtime
 
 WORKDIR /app
@@ -36,6 +48,7 @@ RUN mkdir -p /app/data/chromadb /app/data/uploads && \
 
 # Copy application code (owned by flowzone user)
 COPY --chown=flowzone:flowzone . .
+COPY --from=frontend_builder --chown=flowzone:flowzone /frontend/dist /app/frontend/dist
 
 # Switch to non-root user
 USER flowzone

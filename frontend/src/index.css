@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 7% 2%;
+    --foreground: 240 6% 98%;
+    --card: 240 6% 6%;
+    --card-foreground: 240 6% 98%;
+    --popover: 240 6% 6%;
+    --popover-foreground: 240 6% 98%;
+    --primary: 45 65% 52%;
+    --primary-foreground: 240 7% 2%;
+    --secondary: 240 5% 16%;
+    --secondary-foreground: 240 6% 98%;
+    --muted: 240 5% 16%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 240 5% 16%;
+    --accent-foreground: 240 6% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5% 20%;
+    --input: 240 5% 20%;
+    --ring: 45 65% 52%;
+    --radius: 0.5rem;
+    --sidebar-background: 240 7% 2%;
+    --sidebar-foreground: 240 6% 98%;
+    --sidebar-primary: 45 65% 52%;
+    --sidebar-primary-foreground: 240 7% 2%;
+    --sidebar-accent: 240 5% 16%;
+    --sidebar-accent-foreground: 240 6% 98%;
+    --sidebar-border: 240 5% 20%;
+    --sidebar-ring: 45 65% 52%;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: 'Inter', sans-serif;
+  }
+
+  ::selection {
+    background-color: rgba(212, 175, 55, 0.3);
+    color: #F8F8FA;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #0F0F14;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #2A2A35;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3E3E4F;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Bebas Neue', sans-serif;
+  }
+
+  .font-accent {
+    font-family: 'Permanent Marker', cursive;
+  }
+
+  .text-glow-gold {
+    text-shadow: 0 0 12px rgba(212, 175, 55, 0.5), 0 0 24px rgba(212, 175, 55, 0.3);
+  }
+
+  .text-glow-blue {
+    text-shadow: 0 0 12px rgba(0, 168, 232, 0.5), 0 0 24px rgba(0, 168, 232, 0.3);
+  }
+
+  .bg-noise {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  }
+}

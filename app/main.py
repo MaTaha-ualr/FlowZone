@@ -13,8 +13,11 @@ Changes from original:
 
 from contextlib import asynccontextmanager
 import logging
-from fastapi import FastAPI
+from pathlib import Path
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.logging_config import setup_logging
@@ -41,6 +44,16 @@ from app.api.routes.ws import router as ws_router
 # Setup structured logging immediately
 setup_logging(level=logging.DEBUG if settings.app_debug else logging.INFO)
 logger = logging.getLogger(__name__)
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+FRONTEND_INDEX = FRONTEND_DIST / "index.html"
+RESERVED_FRONTEND_PREFIXES = (
+    "api/",
+    "docs",
+    "redoc",
+    "openapi.json",
+    "health",
+    "ws/",
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -123,10 +136,19 @@ app.include_router(vibe_router)
 app.include_router(admin_router)
 app.include_router(ws_router)  # NEW: WebSocket
 
-# ---- Root Redirect ----
+# ---- Frontend static app ----
+if (FRONTEND_DIST / "assets").is_dir():
+    app.mount(
+        "/assets",
+        StaticFiles(directory=str(FRONTEND_DIST / "assets")),
+        name="frontend-assets",
+    )
+
 @app.get("/", include_in_schema=False)
 async def root():
-    """Redirect root to API docs."""
+    """Serve the frontend when built; otherwise expose API metadata."""
+    if FRONTEND_INDEX.is_file():
+        return FileResponse(FRONTEND_INDEX)
     return {
         "service": "FlowZone API",
         "version": "0.2.1",
@@ -134,3 +156,18 @@ async def root():
         "health": "/health",
         "websocket": "/ws/{session_id}?token=JWT",
     }
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def frontend_spa(full_path: str):
+    """Serve Vite files and SPA fallback without masking backend routes."""
+    if full_path.startswith(RESERVED_FRONTEND_PREFIXES):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    if FRONTEND_INDEX.is_file():
+        candidate = (FRONTEND_DIST / full_path).resolve()
+        dist_root = FRONTEND_DIST.resolve()
+        if str(candidate).startswith(str(dist_root)) and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_INDEX)
+
+    raise HTTPException(status_code=404, detail="Frontend build not found")
