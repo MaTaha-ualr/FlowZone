@@ -202,21 +202,40 @@ def _split_on_sentences(text: str, max_chars: int, overlap_chars: int) -> list[s
 # METADATA EXTRACTION (via LLM)
 # ============================================================
 
-METADATA_EXTRACTION_PROMPT = """You are a document analysis system. Extract structured metadata from this document.
+METADATA_EXTRACTION_PROMPT = """You are a document-analysis system serving FlowZone, a coaching app for high-risk youth (ages 13-18). Read the document and extract structured information that will help a youth and their mentor understand what the document actually means for them — not just what it says.
 
-Respond ONLY with valid JSON:
+Respond ONLY with valid JSON. No prose before or after.
+
 {
-    "document_type": "court_legal|school_record|caseworker_report|parent_communication|medical_mental_health|therapeutic_guide|legal_reference|resource_directory|intervention_playbook|general",
-    "key_dates": ["YYYY-MM-DD"],
-    "key_people": [{"role": "judge|teacher|officer|guardian|therapist|counselor", "description": "brief role description"}],
-    "conditions_or_requirements": ["list of conditions"],
-    "risk_factors": ["list of concerns"],
-    "strengths": ["list of positives"],
-    "summary": "2-3 sentence summary of the document's key information",
-    "tags": ["relevant", "topic", "tags"]
+  "document_type": "court_legal|school_record|caseworker_report|parent_communication|medical_mental_health|therapeutic_guide|legal_reference|resource_directory|intervention_playbook|general",
+  "headline": "ONE sentence (max 12 words) plain-English label of what this document is. Not the literal title. Examples: 'Probation order from your shoplifting case.' / 'Fall semester report card.' / 'Mental-health intake screening from November.'",
+  "summary": "3-6 sentences in plain, direct language. State who issued it, when, what it actually requires or says, and the bottom line. Do NOT use legalese, clinical jargon, or bureaucratic phrasing. Address the youth in second person where natural ('you'). Avoid quoting the document verbatim — paraphrase.",
+  "what_this_means": "2-4 sentences telling the youth what this practically changes for them: what to do, what to avoid, what's at stake, what windows of time matter. If it's neutral/informational only, say so.",
+  "key_dates": [
+    {"date": "YYYY-MM-DD", "label": "what happens or happened on that date"}
+  ],
+  "key_people": [
+    {"role": "judge|probation_officer|teacher|principal|counselor|therapist|caseworker|guardian|parent|mentor|attorney|other", "name_or_descriptor": "name if present, else short descriptor", "relevance": "one short phrase on why they matter"}
+  ],
+  "conditions_or_requirements": [
+    "Each condition as a single short imperative or rule the youth must follow. Examples: 'Be home by 9pm on weekdays', 'No contact with Trey W.', 'Complete 40 hours community service by 2025-06-01'."
+  ],
+  "risk_factors": [
+    "Discrete factors that elevate risk for THIS youth, in plain language. Examples: 'Curfew violation flagged Feb 5', 'Failing two core classes this term', 'Documented PTSD triggers around physical confrontation'."
+  ],
+  "strengths": [
+    "Discrete positives the document records. Examples: 'A in PE, exceptional athlete', 'Compliant with therapy 8/8 sessions', 'Honor-roll GPA pre-incident'."
+  ],
+  "tags": ["3-7 short tags, lowercase, kebab-case if multi-word. Examples: 'probation', 'curfew', 'gpa-drop', 'iep-recommended', 'no-contact-order'."]
 }
 
-Only include fields that are present in the document. Leave arrays empty if not applicable.
+Rules:
+- Always include "headline", "summary", and "what_this_means". The other fields are optional — leave them as empty arrays if not applicable.
+- Never invent dates, names, or conditions that aren't in the document. If a field would be a guess, omit it.
+- Never include sensitive third-party information that isn't directly relevant (other students' full names, family member medical histories, etc.).
+- For court documents, "what_this_means" must include any consequence of non-compliance if the document states one.
+- For school documents, "what_this_means" should connect grades or attendance to any privileges or eligibility (athletics, programs, advancement) the document mentions.
+- For medical/mental-health documents, never speculate beyond what's explicitly recorded. No diagnoses the document doesn't state.
 """
 
 
@@ -242,8 +261,8 @@ async def extract_metadata(
             messages=messages,
             db=db,
             user_id=user_id,
-            max_tokens=512,
-            temperature=0.1,
+            max_tokens=1200,
+            temperature=0.2,
         )
 
         # Parse JSON response

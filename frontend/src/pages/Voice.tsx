@@ -1,12 +1,23 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, Square, Loader2, Volume2, VolumeX, AlertTriangle } from "lucide-react";
+import {
+  Mic,
+  Square,
+  Loader2,
+  Volume2,
+  VolumeX,
+  AlertTriangle,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import {
   createSession,
   getCurrentSession,
   sendChatMessage,
   synthesizeVoice,
   transcribeVoice,
+  deleteSession,
+  startNewSession,
 } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import type { CharacterEnum, SessionResponse } from "@/types";
@@ -302,6 +313,54 @@ export default function Voice() {
     audio.play().catch(() => undefined);
   };
 
+  const handleNewConversation = useCallback(async () => {
+    if (!user?.id) return;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    try {
+      const fresh = (await startNewSession(user.id)) as { id: string };
+      setSessionId(fresh.id);
+      setTurns([]);
+      setStatus("idle");
+      setErrorMsg("");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Could not start a new conversation.");
+      setStatus("error");
+    }
+  }, [user?.id]);
+
+  const handleDeleteConversation = useCallback(async () => {
+    if (!sessionId || !user?.id) return;
+    if (
+      !window.confirm(
+        "Delete this conversation? The transcript is gone for good. Trust history stays.",
+      )
+    ) {
+      return;
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    try {
+      await deleteSession(sessionId);
+    } catch (err) {
+      console.warn("Could not delete this conversation", err);
+    }
+    // After deleting, start a brand-new session so the page is usable.
+    try {
+      const fresh = (await startNewSession(user.id)) as { id: string };
+      setSessionId(fresh.id);
+    } catch {
+      setSessionId(null);
+    }
+    setTurns([]);
+    setStatus("idle");
+    setErrorMsg("");
+  }, [sessionId, user?.id]);
+
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
   const buttonState =
@@ -328,13 +387,31 @@ export default function Voice() {
             </h1>
             <p className="text-xs text-text-muted">{display.tagline}</p>
           </div>
-          <button
-            onClick={() => setMuted((m) => !m)}
-            className="p-2 rounded-lg border border-fz-border text-text-secondary hover:text-text-primary"
-            title={muted ? "Unmute auto-play" : "Mute auto-play"}
-          >
-            {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setMuted((m) => !m)}
+              className="p-2 rounded-lg border border-fz-border text-text-secondary hover:text-text-primary"
+              title={muted ? "Unmute auto-play" : "Mute auto-play"}
+            >
+              {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+            </button>
+            <button
+              onClick={handleNewConversation}
+              disabled={status === "recording" || status === "transcribing" || status === "thinking"}
+              className="p-2 rounded-lg border border-fz-border text-text-secondary hover:text-fz-gold disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Start new conversation"
+            >
+              <RefreshCw className="w-5 h-5" />
+            </button>
+            <button
+              onClick={handleDeleteConversation}
+              disabled={!sessionId || status === "recording" || status === "transcribing" || status === "thinking"}
+              className="p-2 rounded-lg border border-fz-border text-text-secondary hover:text-safe-red disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Delete this conversation"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          </div>
         </motion.header>
 
         {/* Conversation */}

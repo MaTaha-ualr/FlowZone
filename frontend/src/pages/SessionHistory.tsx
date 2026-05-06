@@ -19,7 +19,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { getSessions as fetchSessions } from '@/lib/api'
+import { getSessions as fetchSessions, deleteSession as apiDeleteSession } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
 
 /* ─── Types ─── */
@@ -152,161 +152,6 @@ function historyFromApi(session: unknown): HistorySession {
   }
 }
 
-/* ─── Mock data (design.md examples) ─── */
-
-const MOCK_SESSIONS: HistorySession[] = [
-  {
-    id: 'sess-001',
-    date: '2024-03-12T20:15:00Z',
-    time: '8:15 PM',
-    day: 'Tuesday',
-    duration_minutes: 18,
-    character: 'vex',
-    character_role: 'Challenger',
-    character_color: '#DC2626',
-    vibe: 'angry',
-    vibe_emoji: '🔥',
-    vibe_color: '#FF6B35',
-    preview: "Got in a fight at school. Trey kept pushing my buttons...",
-    trust_delta: 4.8,
-    tactical_action: 'Attend first period tomorrow',
-    tactical_accepted: true,
-    mask_detected: false,
-    regulation_completed: false,
-    safe_harbor: 'yellow',
-    messages: [
-      { role: 'user', content: "Got in a fight at school. Trey kept pushing my buttons and I lost it.", timestamp: '2024-03-12T20:15:00Z' },
-      { role: 'assistant', content: "Okay, pause. You lost it — what happened right before?", timestamp: '2024-03-12T20:15:30Z' },
-      { role: 'user', content: "He called me a snitch. In front of everyone.", timestamp: '2024-03-12T20:16:00Z' },
-      { role: 'assistant', content: "That's a violation. But you know what costs more? The PO finding out. What's your move tomorrow?", timestamp: '2024-03-12T20:16:45Z' },
-    ],
-    trust_breakdown: { consistency: 2.0, weight: 1.8, weight_multiplier: 1.5, honesty: 0, regulation: 1.0, penalty: 0, total: 4.8 },
-  },
-  {
-    id: 'sess-002',
-    date: '2024-03-11T21:30:00Z',
-    time: '9:30 PM',
-    day: 'Monday',
-    duration_minutes: 12,
-    character: 'yogi',
-    character_role: 'Navigator',
-    character_color: '#00A8E8',
-    vibe: 'solid',
-    vibe_emoji: '💎',
-    vibe_color: '#00B4D8',
-    preview: "Just checking in. Grandma made my favorite today...",
-    trust_delta: 3.2,
-    tactical_action: undefined,
-    mask_detected: false,
-    regulation_completed: false,
-    safe_harbor: 'green',
-    messages: [
-      { role: 'user', content: "Just checking in. Grandma made my favorite today — peach cobbler.", timestamp: '2024-03-11T21:30:00Z' },
-      { role: 'assistant', content: "That's love. Hold onto that feeling. What else is good?", timestamp: '2024-03-11T21:30:45Z' },
-    ],
-    trust_breakdown: { consistency: 1.5, weight: 1.2, weight_multiplier: 1.0, honesty: 0.5, regulation: 0, penalty: 0, total: 3.2 },
-  },
-  {
-    id: 'sess-003',
-    date: '2024-03-10T19:45:00Z',
-    time: '7:45 PM',
-    day: 'Sunday',
-    duration_minutes: 24,
-    character: 'yogi',
-    character_role: 'Navigator',
-    character_color: '#00A8E8',
-    vibe: 'storm',
-    vibe_emoji: '⛈️',
-    vibe_color: '#7C3AED',
-    preview: "I can't do this. Everything's falling apart...",
-    trust_delta: 2.1,
-    tactical_action: 'Tactical Reset completed',
-    tactical_accepted: true,
-    mask_detected: false,
-    regulation_completed: true,
-    safe_harbor: 'red',
-    messages: [
-      { role: 'user', content: "I can't do this. Everything's falling apart and I don't know how to stop it.", timestamp: '2024-03-10T19:45:00Z' },
-      { role: 'assistant', content: "Breathe. You called me. That's the stop. Let's do a Tactical Reset together.", timestamp: '2024-03-10T19:46:00Z' },
-    ],
-    trust_breakdown: { consistency: 1.0, weight: 0.8, weight_multiplier: 1.0, honesty: 0.3, regulation: 0, penalty: 0, total: 2.1 },
-  },
-  {
-    id: 'sess-004',
-    date: '2024-03-09T18:00:00Z',
-    time: '6:00 PM',
-    day: 'Saturday',
-    duration_minutes: 8,
-    character: 'vex',
-    character_role: 'Challenger',
-    character_color: '#DC2626',
-    vibe: 'guarded',
-    vibe_emoji: '🔏',
-    vibe_color: '#64748B',
-    preview: "I'm fine. Everything's fine.",
-    trust_delta: -15.0,
-    tactical_action: undefined,
-    mask_detected: true,
-    regulation_completed: false,
-    safe_harbor: 'yellow',
-    messages: [
-      { role: 'user', content: "I'm fine. Everything's fine.", timestamp: '2024-03-09T18:00:00Z' },
-      { role: 'system', content: "Mask detected — you said 'fine' but you're storm inside.", timestamp: '2024-03-09T18:00:15Z' },
-      { role: 'assistant', content: "You sure you're fine? 'Cause that message read like a tornado.", timestamp: '2024-03-09T18:00:30Z' },
-    ],
-    trust_breakdown: { consistency: 0, weight: 0, weight_multiplier: 1.0, honesty: -5.0, regulation: 0, penalty: -10.0, total: -15.0 },
-  },
-  {
-    id: 'sess-005',
-    date: '2024-03-08T20:00:00Z',
-    time: '8:00 PM',
-    day: 'Friday',
-    duration_minutes: 15,
-    character: 'vex',
-    character_role: 'Challenger',
-    character_color: '#DC2626',
-    vibe: 'angry',
-    vibe_emoji: '🔥',
-    vibe_color: '#FF6B35',
-    preview: "PO Whitfield trying to reschedule again...",
-    trust_delta: 5.5,
-    tactical_action: 'Show up to PO meeting early',
-    tactical_accepted: true,
-    mask_detected: false,
-    regulation_completed: false,
-    safe_harbor: 'green',
-    messages: [
-      { role: 'user', content: "PO Whitfield trying to reschedule again. Third time this month.", timestamp: '2024-03-08T20:00:00Z' },
-      { role: 'assistant', content: "Nah. You show up early next time. Take control of the narrative.", timestamp: '2024-03-08T20:01:00Z' },
-    ],
-    trust_breakdown: { consistency: 2.5, weight: 2.0, weight_multiplier: 1.5, honesty: 0, regulation: 1.0, penalty: 0, total: 5.5 },
-  },
-  {
-    id: 'sess-006',
-    date: '2024-03-07T21:15:00Z',
-    time: '9:15 PM',
-    day: 'Thursday',
-    duration_minutes: 10,
-    character: 'ace',
-    character_role: 'Straight Shooter',
-    character_color: '#10B981',
-    vibe: 'solid',
-    vibe_emoji: '💎',
-    vibe_color: '#00B4D8',
-    preview: "Basketball practice was actually good today...",
-    trust_delta: 3.8,
-    tactical_action: undefined,
-    mask_detected: false,
-    regulation_completed: false,
-    safe_harbor: 'green',
-    messages: [
-      { role: 'user', content: "Basketball practice was actually good today. Coach said I'm improving.", timestamp: '2024-03-07T21:15:00Z' },
-      { role: 'assistant', content: "Facts. Keep showing up. Consistency is the whole game.", timestamp: '2024-03-07T21:16:00Z' },
-    ],
-    trust_breakdown: { consistency: 2.0, weight: 1.0, weight_multiplier: 1.0, honesty: 0.8, regulation: 0, penalty: 0, total: 3.8 },
-  },
-]
-
 /* ─── Components ─── */
 
 function HexAvatar({ color, src, size = 40 }: { color: string; src?: string; size?: number }) {
@@ -334,8 +179,10 @@ export default function SessionHistory() {
   const navigate = useNavigate()
   const { user } = useAuth()
 
-  const [sessions, setSessions] = useState<HistorySession[]>(MOCK_SESSIONS)
-  const [loading, setLoading] = useState(false)
+  const [sessions, setSessions] = useState<HistorySession[]>([])
+  const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string>('')
   const [search, setSearch] = useState('')
   const [timeFilter, setTimeFilter] = useState<'all' | 'month' | 'week'>('all')
   const [charFilter, setCharFilter] = useState<string>('all')
@@ -345,16 +192,16 @@ export default function SessionHistory() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
 
-  // Load real data on mount
+  // Load real data on mount. No mock fallback — empty state is honest.
   useEffect(() => {
     if (!user?.id) return
     setLoading(true)
     fetchSessions(user.id)
       .then((data) => {
         const mapped = Array.isArray(data) ? data.map(historyFromApi) : []
-        if (mapped.length > 0) setSessions(mapped)
+        setSessions(mapped)
       })
-      .catch(() => { /* keep mocks */ })
+      .catch(() => setSessions([]))
       .finally(() => setLoading(false))
   }, [user?.id])
 
@@ -890,16 +737,34 @@ export default function SessionHistory() {
                   Keep it
                 </button>
                 <button
-                  onClick={() => {
-                    setSessions((prev) => prev.filter((s) => s.id !== deleteTarget))
-                    setDeleteTarget(null)
-                    setDetailSession(null)
+                  onClick={async () => {
+                    if (!deleteTarget) return
+                    setDeleting(true)
+                    setDeleteError('')
+                    try {
+                      await apiDeleteSession(deleteTarget)
+                      setSessions((prev) => prev.filter((s) => s.id !== deleteTarget))
+                      setDeleteTarget(null)
+                      setDetailSession(null)
+                    } catch (err) {
+                      setDeleteError(
+                        err instanceof Error ? err.message : 'Could not delete this session.',
+                      )
+                    } finally {
+                      setDeleting(false)
+                    }
                   }}
-                  className="flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                  disabled={deleting}
+                  className="flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                   style={{ backgroundColor: '#DC2626', color: '#F8F8FA' }}
                 >
-                  Delete
+                  {deleting ? 'Deleting…' : 'Delete'}
                 </button>
+                {deleteError && (
+                  <div className="basis-full text-xs mt-2" style={{ color: '#DC2626' }}>
+                    {deleteError}
+                  </div>
+                )}
               </div>
             </motion.div>
           </motion.div>

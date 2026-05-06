@@ -222,6 +222,14 @@ export function endSession(sessionId: string) {
   return put(`/api/v1/sessions/${sessionId}/end`);
 }
 
+export function deleteSession(sessionId: string) {
+  return del(`/api/v1/sessions/${sessionId}`);
+}
+
+export function startNewSession(userId: string) {
+  return post(`/api/v1/sessions/${userId}/new`);
+}
+
 export function getVoiceOptions() {
   return get("/api/v1/voice/voices");
 }

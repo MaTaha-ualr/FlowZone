@@ -159,27 +159,61 @@ function renderMetadataValue(value: unknown): React.ReactElement | string | null
 
 function ExtractedMetadataView({ metadata }: { metadata: Record<string, unknown> }) {
   // Pull the well-known fields out, render the rest as generic.
+  const headline = metadata.headline
   const summary = metadata.summary
+  const whatThisMeans = metadata.what_this_means
   const tags = metadata.tags
   const keyDates = metadata.key_dates
   const keyPeople = metadata.key_people
-  const conditions = metadata.conditions
+  const conditions = metadata.conditions || metadata.conditions_or_requirements
   const riskFactors = metadata.risk_factors
-  const handled = new Set(['summary', 'tags', 'key_dates', 'key_people', 'conditions', 'risk_factors'])
+  const strengths = metadata.strengths
+  const handled = new Set([
+    'headline',
+    'summary',
+    'what_this_means',
+    'tags',
+    'key_dates',
+    'key_people',
+    'conditions',
+    'conditions_or_requirements',
+    'risk_factors',
+    'strengths',
+    'document_type',
+  ])
   const remaining = Object.entries(metadata).filter(([k, v]) => !handled.has(k) && v !== null && v !== undefined && v !== '')
 
+  const hasHeadline = typeof headline === 'string' && headline.length > 0
   const hasSummary = summary !== null && summary !== undefined && summary !== ''
+  const hasWhatThisMeans =
+    whatThisMeans !== null && whatThisMeans !== undefined && whatThisMeans !== ''
   const hasKeyDates = keyDates !== null && keyDates !== undefined && keyDates !== ''
   const hasKeyPeople = keyPeople !== null && keyPeople !== undefined && keyPeople !== ''
   const hasConditions = conditions !== null && conditions !== undefined && conditions !== ''
   const hasRiskFactors = riskFactors !== null && riskFactors !== undefined && riskFactors !== ''
+  const hasStrengths = strengths !== null && strengths !== undefined && strengths !== ''
 
   return (
     <div>
+      {hasHeadline && (
+        <p className="text-base text-textPrimary font-medium leading-snug mb-4 pb-3 border-b border-borderSubtle">
+          {String(headline)}
+        </p>
+      )}
       {hasSummary && (
         <MetadataField icon={FileSearch} label="Summary">
           {renderMetadataValue(summary)}
         </MetadataField>
+      )}
+      {hasWhatThisMeans && (
+        <div className="mb-4 p-3 rounded-fz-md bg-brandGold/5 border border-brandGold/20">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-brandGold mb-1.5">
+            <ShieldAlert size={12} /> What this means for you
+          </div>
+          <div className="text-sm text-textPrimary leading-relaxed">
+            {renderMetadataValue(whatThisMeans)}
+          </div>
+        </div>
       )}
       {hasKeyDates && (
         <MetadataField icon={Calendar} label="Key Dates">
@@ -199,6 +233,11 @@ function ExtractedMetadataView({ metadata }: { metadata: Record<string, unknown>
       {hasRiskFactors && (
         <MetadataField icon={AlertTriangle} label="Risk Factors">
           {renderMetadataValue(riskFactors)}
+        </MetadataField>
+      )}
+      {hasStrengths && (
+        <MetadataField icon={CheckCircle} label="Strengths">
+          {renderMetadataValue(strengths)}
         </MetadataField>
       )}
       {Array.isArray(tags) && tags.length > 0 && (

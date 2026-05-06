@@ -11,10 +11,11 @@ import uuid
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, delete
 from app.database import get_db
 from app.models.user import User
 from app.models.session import Session
+from app.models.message import Message
 from app.schemas.api import SessionResponse
 from app.core.config import settings
 from app.core.safe_harbor import determine_floor
@@ -165,3 +166,99 @@ async def end_session(
     await db.flush()
     await db.commit()
     return session
+
+
+@router.delete("/{session_id}", status_code=204)
+async def delete_session(
+    session_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Permanently delete a session and all its messages.
+    Trust score history (daily snapshots) is NOT deleted — those are durable
+    audit data. The conversation transcript is.
+    Owner-only.
+    """
+    session = await db.get(Session, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if str(session.user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Delete all messages in this session first (no FK CASCADE configured).
+    await db.execute(delete(Message).where(Message.session_id == session_id))
+    # Then the session row itself.
+    await db.delete(session)
+
+    if session.is_active:
+        await concurrency_guard.release(str(session.user_id))
+
+    await db.flush()
+    await db.commit()
+    return None
+
+
+@router.post("/{user_id}/new", response_model=SessionResponse, status_code=201)
+async def force_new_session(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Force-end any active session for this user and create a fresh one.
+    Use when the user explicitly hits "Start new conversation" — distinct
+    from POST /{user_id} which resumes an active session if one exists.
+    Owner-only.
+    """
+    if str(user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    user = await db.get(User, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not user.intake_completed:
+        raise HTTPException(status_code=400, detail="Complete the Strategic Intake first")
+
+    # End all active sessions for this user.
+    now = datetime.utcnow()
+    active_result = await db.execute(
+        select(Session).where(
+            and_(Session.user_id == user_id, Session.is_active == True)
+        )
+    )
+    for prior in active_result.scalars().all():
+        prior.is_active = False
+        prior.ended_at = now
+        if prior.started_at:
+            delta = now - prior.started_at
+            prior.duration_minutes = int(delta.total_seconds() / 60)
+
+    await concurrency_guard.release(str(user_id))
+
+    # Re-acquire concurrency slot for the new session.
+    allowed = await concurrency_guard.check_in(str(user_id))
+    if not allowed:
+        await db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "System at capacity",
+                "message": f"FlowZone supports {settings.max_concurrent_users} concurrent users.",
+                "active_users": concurrency_guard.active_count,
+            },
+        )
+
+    floor = determine_floor(user)
+    new_session = Session(
+        user_id=user_id,
+        character_active=user.current_character,
+        safe_harbor_level=floor,
+        started_at=now,
+        is_active=True,
+    )
+    db.add(new_session)
+    await db.flush()
+    await db.commit()
+    await db.refresh(new_session)
+    return new_session

@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils'
 import {
   createSession,
   endSession as endSessionApi,
+  deleteSession as deleteSessionApi,
+  startNewSession as startNewSessionApi,
   getChatHistory as getChatHistoryApi,
   getToken,
   sendChatMessage as sendChatMessageApi,
@@ -518,6 +520,32 @@ export default function FlowQuest() {
     navigate('/dashboard')
   }
 
+  const handleStartNewConversation = async () => {
+    if (!user?.id) return
+    try {
+      const fresh = (await startNewSessionApi(user.id)) as { id: string }
+      setMessages([])
+      setHasStarted(false)
+      setSessionId(fresh.id)
+      navigate(`/flowquest/${fresh.id}`, { replace: true })
+    } catch (err) {
+      console.warn('Could not start a new conversation', err)
+    }
+  }
+
+  const handleDeleteConversation = async () => {
+    if (!sessionId) return
+    if (!window.confirm('Delete this conversation? The transcript is gone for good. Trust history stays.')) {
+      return
+    }
+    try {
+      await deleteSessionApi(sessionId)
+    } catch (err) {
+      console.warn('Could not delete this conversation', err)
+    }
+    navigate('/sessions')
+  }
+
   const startRecording = () => {
     setRecording(true)
     setRecordingTime(0)
@@ -623,6 +651,13 @@ export default function FlowQuest() {
                   style={{ backgroundColor: '#18181F', borderColor: '#2A2A35' }}
                 >
                   <button
+                    onClick={() => { void handleStartNewConversation(); setMenuOpen(false) }}
+                    className="w-full text-left px-4 py-2.5 text-sm transition-colors hover:bg-white/5"
+                    style={{ color: '#D4AF37' }}
+                  >
+                    Start new conversation
+                  </button>
+                  <button
                     onClick={() => { setShowEndModal(true); setMenuOpen(false) }}
                     className="w-full text-left px-4 py-2.5 text-sm transition-colors hover:bg-white/5"
                     style={{ color: '#F8F8FA' }}
@@ -642,6 +677,14 @@ export default function FlowQuest() {
                     style={{ color: '#A1A1AA' }}
                   >
                     Session Info
+                  </button>
+                  <div className="h-px" style={{ backgroundColor: '#2A2A35' }} />
+                  <button
+                    onClick={() => { void handleDeleteConversation(); setMenuOpen(false) }}
+                    className="w-full text-left px-4 py-2.5 text-sm transition-colors hover:bg-white/5"
+                    style={{ color: '#DC2626' }}
+                  >
+                    Delete this conversation
                   </button>
                 </motion.div>
               )}
