@@ -210,6 +210,10 @@ export interface DocumentItem {
   uploaded_at: string
   url?: string
   rag_snippets?: string[]
+  document_type?: string
+  mime_type?: string
+  chunk_count?: number
+  extracted_metadata?: Record<string, unknown>
 }
 
 export interface IntakeAnswers {

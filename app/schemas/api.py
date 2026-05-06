@@ -413,7 +413,9 @@ class DocumentRefResponse(BaseModel):
     filename: str
     document_type: str
     processing_status: str
-    chunk_count: Optional[int]
+    chunk_count: Optional[int] = None
+    mime_type: Optional[str] = None
+    extracted_metadata: Optional[dict] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
