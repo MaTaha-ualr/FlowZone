@@ -428,8 +428,24 @@ export default function Rewards() {
               transition={{ duration: 0.5, delay: 0.3 }}
             >
               <div className="flex items-center gap-3">
-                <div className="h-12 w-12 overflow-hidden rounded-full" style={{ background: COLORS.bgOverlay }}>
-                  <img src="/mentor-ray.jpg" alt="Coach Ray" className="h-full w-full object-cover" />
+                <div
+                  className="h-12 w-12 overflow-hidden rounded-full flex items-center justify-center font-display text-lg"
+                  style={{ background: COLORS.bgOverlay, color: COLORS.brandGold }}
+                >
+                  <img
+                    src="/mentor-ray.jpg"
+                    alt="Coach Ray"
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      const img = e.currentTarget
+                      img.style.display = 'none'
+                      const parent = img.parentElement
+                      if (parent && !parent.dataset.fallback) {
+                        parent.dataset.fallback = '1'
+                        parent.appendChild(document.createTextNode('CR'))
+                      }
+                    }}
+                  />
                 </div>
                 <div>
                   <h4 className="text-sm font-semibold" style={{ color: COLORS.textPrimary }}>

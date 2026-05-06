@@ -71,8 +71,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [setAuth]);
 
   const register = useCallback(async (data: Record<string, unknown>) => {
-    await apiRegister(data);
-  }, []);
+    const response = await apiRegister(data) as { access_token?: string; user?: UserProfileResponse };
+    if (response?.access_token && response?.user) {
+      setAuth(response.access_token, response.user);
+    }
+  }, [setAuth]);
 
   const logout = useCallback(() => {
     localStorage.removeItem("flowzone_auth");

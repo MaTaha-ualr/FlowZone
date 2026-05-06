@@ -534,8 +534,24 @@ export default function TrustDetail() {
               {/* Next Tier Preview */}
               <div className="mt-6 border-t pt-4" style={{ borderColor: COLORS.borderSubtle }}>
                 <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 overflow-hidden rounded-lg opacity-60" style={{ background: `${COLORS.flex}20` }}>
-                    <img src="/tier-flex.png" alt="The Flex" className="h-full w-full object-cover" />
+                  <div
+                    className="h-12 w-12 overflow-hidden rounded-lg opacity-60 flex items-center justify-center font-display text-base"
+                    style={{ background: `${COLORS.flex}20`, color: COLORS.flex }}
+                  >
+                    <img
+                      src="/tier-flex.png"
+                      alt="The Flex"
+                      className="h-full w-full object-cover"
+                      onError={(e) => {
+                        const img = e.currentTarget
+                        img.style.display = 'none'
+                        const parent = img.parentElement
+                        if (parent && !parent.dataset.fallback) {
+                          parent.dataset.fallback = '1'
+                          parent.appendChild(document.createTextNode('FLEX'))
+                        }
+                      }}
+                    />
                   </div>
                   <div>
                     <h3 className="text-lg font-normal tracking-wide" style={{ fontFamily: 'Bebas Neue, sans-serif', color: COLORS.flex }}>

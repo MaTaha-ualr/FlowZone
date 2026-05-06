@@ -71,6 +71,7 @@
 @layer utilities {
   .font-display {
     font-family: 'Bebas Neue', sans-serif;
+    letter-spacing: 0.02em;
   }
 
   .font-accent {
