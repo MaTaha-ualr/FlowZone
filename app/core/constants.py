@@ -68,6 +68,30 @@ CHARACTER_ASSIGNMENT_RULES = {
 }
 
 
+CHARACTER_DISPLAY_NAMES = {
+    Character.NAVIGATOR: "Yogi",
+    Character.CHALLENGER: "Vex",
+    Character.STRAIGHT_SHOOTER: "Ace",
+    Character.STRATEGIST: "Nova",
+}
+
+
+VIBE_CHARACTER_MAP = {
+    Vibe.SOLID: Character.NAVIGATOR,
+    Vibe.ANGRY: Character.CHALLENGER,
+    Vibe.GUARDED: Character.STRAIGHT_SHOOTER,
+    Vibe.STORM: Character.NAVIGATOR,
+}
+
+
+VIBE_MESSAGE_TEMPLATES = {
+    Vibe.SOLID: "{character_name} is here to help you keep the momentum steady.",
+    Vibe.ANGRY: "You're feeling angry. {character_name} is here to help you cool down.",
+    Vibe.GUARDED: "You're feeling guarded. {character_name} will keep it direct and low-pressure.",
+    Vibe.STORM: "You're in storm mode. {character_name} is here to help you slow things down.",
+}
+
+
 # ============================================================
 # MODEL PROVIDER DEFINITIONS
 # ============================================================
@@ -239,6 +263,41 @@ TRUST_TIER_THRESHOLDS = {
     TrustTier.THE_WATCH: 0,       # Starting tier
     TrustTier.THE_FLEX: 200,      # Points needed
     TrustTier.THE_VETTED: 500,    # Points needed
+}
+
+
+TRUST_TIER_DISPLAY = {
+    TrustTier.THE_WATCH: {
+        "name": "The Watch",
+        "color": "#9E9E9E",
+        "emoji": "\U0001f441\ufe0f",
+    },
+    TrustTier.THE_FLEX: {
+        "name": "The Flex",
+        "color": "#4CAF50",
+        "emoji": "\U0001f4aa",
+    },
+    TrustTier.THE_VETTED: {
+        "name": "The Vetted",
+        "color": "#7E57C2",
+        "emoji": "\u2b50",
+    },
+}
+
+
+VOUCH_DISPLAY = {
+    "curfew_extension": {
+        "name": "Curfew Extension",
+        "icon": "\U0001f319",
+    },
+    "social_pass": {
+        "name": "Social Pass",
+        "icon": "\U0001f389",
+    },
+    "reduced_monitoring": {
+        "name": "Reduced Monitoring",
+        "icon": "\U0001f513",
+    },
 }
 
 

@@ -25,6 +25,7 @@ from app.services.model_router import model_router
 
 # Import all routers
 from app.api.routes.health import router as health_router
+from app.api.routes.auth import router as auth_router
 from app.api.routes.users import router as users_router
 from app.api.routes.sessions import router as sessions_router
 from app.api.routes.chat import router as chat_router
@@ -32,6 +33,8 @@ from app.api.routes.voice import router as voice_router
 from app.api.routes.mentors import router as mentors_router
 from app.api.routes.documents import router as documents_router
 from app.api.routes.trust import router as trust_router
+from app.api.routes.profile import router as profile_router
+from app.api.routes.vibe import router as vibe_router
 from app.api.routes.admin import router as admin_router
 from app.api.routes.ws import router as ws_router
 
@@ -81,7 +84,7 @@ app = FastAPI(
         "Multi-model AI chatbot for high-risk youth with adaptive characters, "
         "voice input, RAG, and gamified trust scoring."
     ),
-    version="0.2.0",  # Bumped for this release
+    version="0.2.1",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -107,6 +110,7 @@ app.add_middleware(RateLimitMiddleware)
 
 # ---- Register Routers ----
 app.include_router(health_router)
+app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(sessions_router)
 app.include_router(chat_router)
@@ -114,6 +118,8 @@ app.include_router(voice_router)
 app.include_router(mentors_router)
 app.include_router(documents_router)
 app.include_router(trust_router)
+app.include_router(profile_router)
+app.include_router(vibe_router)
 app.include_router(admin_router)
 app.include_router(ws_router)  # NEW: WebSocket
 
@@ -123,7 +129,7 @@ async def root():
     """Redirect root to API docs."""
     return {
         "service": "FlowZone API",
-        "version": "0.2.0",
+        "version": "0.2.1",
         "docs": "/docs",
         "health": "/health",
         "websocket": "/ws/{session_id}?token=JWT",

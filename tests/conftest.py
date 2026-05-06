@@ -106,6 +106,31 @@ async def client(db_engine):
 # ============================================================
 
 @pytest.fixture
+async def real_auth_client(db_engine):
+    factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    original_demo_mode = settings.app_demo_mode
+    settings.app_demo_mode = False
+
+    async def override_get_db():
+        async with factory() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    app.dependency_overrides[get_db] = override_get_db
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.clear()
+        settings.app_demo_mode = original_demo_mode
+
+
+@pytest.fixture
 def mock_model_router():
     mock_response = LLMResponse(
         content="Test response from mock router.",

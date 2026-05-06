@@ -7,7 +7,7 @@ Provides:
   - Demo mode bypass for pilot testing
 
 Dependencies already in requirements.txt:
-  python-jose[cryptography], passlib[bcrypt]
+  python-jose[cryptography], bcrypt
 """
 
 import uuid
@@ -17,8 +17,8 @@ from typing import Optional, Union
 
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -33,17 +33,25 @@ logger = logging.getLogger(__name__)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30  # Youth apps: long-lived tokens (device stays logged in)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)  # auto_error=False lets demo mode work
 
 # ------------------------------------------------------------------
 # Password helpers (for mentor auth later)
 # ------------------------------------------------------------------
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    password = plain.encode("utf-8")
+    if len(password) > 72:
+        return False
+    try:
+        return bcrypt.checkpw(password, hashed.encode("utf-8"))
+    except ValueError:
+        return False
 
 def get_password_hash(plain: str) -> str:
-    return pwd_context.hash(plain)
+    password = plain.encode("utf-8")
+    if len(password) > 72:
+        raise ValueError("Password must be 72 bytes or fewer.")
+    return bcrypt.hashpw(password, bcrypt.gensalt()).decode("utf-8")
 
 # ------------------------------------------------------------------
 # JWT helpers

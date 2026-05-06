@@ -22,7 +22,7 @@ from app.services.rag import chroma_store
 
 router = APIRouter(tags=["Health"])
 
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.2.1"
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check(

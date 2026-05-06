@@ -34,6 +34,17 @@ class User(Base):
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     state: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
+    # ---- Auth & Contact ----
+    username: Mapped[str | None] = mapped_column(
+        String(50), unique=True, index=True, nullable=True
+    )
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(
+        String(255), unique=True, index=True, nullable=True
+    )
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="youth")
+
     # ---- User Type ----
     # "juvenile_justice" or "at_risk"
     user_type: Mapped[str] = mapped_column(String(30), nullable=False, default="at_risk")

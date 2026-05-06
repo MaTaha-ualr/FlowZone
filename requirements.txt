@@ -43,7 +43,7 @@ google-auth-oauthlib==1.2.1
 # ---- Utilities ----
 httpx==0.28.1               # Async HTTP client (for API calls)
 python-jose[cryptography]==3.3.0  # JWT tokens (for auth)
-passlib[bcrypt]==1.7.4      # Password hashing (for mentor auth)
+bcrypt==5.0.0                    # Password hashing
 
 # ---- Testing ----
 pytest==8.3.4

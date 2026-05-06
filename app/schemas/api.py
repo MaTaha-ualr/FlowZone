@@ -43,6 +43,11 @@ class SafeHarborEnum(str, Enum):
     red = "red"
 
 
+class RoleEnum(str, Enum):
+    youth = "youth"
+    mentor = "mentor"
+
+
 # ============================================================
 # HEALTH CHECK
 # ============================================================
@@ -115,6 +120,130 @@ class UserResponse(BaseModel):
 class UserListResponse(BaseModel):
     users: list[UserResponse]
     total: int
+
+
+# ============================================================
+# AUTH / PROFILE SCHEMAS
+# ============================================================
+
+class AuthRegisterRequest(BaseModel):
+    """Create an account for the wireframe login/signup flow."""
+    name: str = Field(..., min_length=1, max_length=100)
+    username: str = Field(
+        ...,
+        min_length=3,
+        max_length=50,
+        pattern=r"^[A-Za-z0-9_.-]+$",
+    )
+    password: str = Field(..., min_length=8, max_length=72)
+    email: Optional[str] = Field(default=None, max_length=255)
+    phone: Optional[str] = Field(default=None, max_length=30)
+    age: int = Field(..., ge=12, le=99)
+    role: RoleEnum = RoleEnum.youth
+    school_name: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    user_type: str = Field(default="at_risk", pattern="^(juvenile_justice|at_risk)$")
+    has_probation: bool = False
+    has_case_worker: bool = False
+
+
+class AuthLoginRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=50)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class AuthUserResponse(BaseModel):
+    id: UUID
+    name: str
+    username: Optional[str]
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    role: RoleEnum
+    current_character: CharacterEnum
+    current_character_name: str
+    current_tier: str
+    check_in_streak: int
+    current_trust_score: float
+    display_score: float
+    intake_completed: bool
+    safe_harbor_floor: SafeHarborEnum
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: AuthUserResponse
+
+
+class UserProfileResponse(AuthUserResponse):
+    age: int
+    school_name: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    user_type: str
+    has_probation: bool
+    has_case_worker: bool
+    created_at: datetime
+
+
+class RainbowTierResponse(BaseModel):
+    key: str
+    name: str
+    threshold: float
+    color: str
+    emoji: str
+    unlocked: bool
+
+
+class RainbowCircleResponse(BaseModel):
+    current_tier: str
+    current_tier_name: str
+    current_tier_color: str
+    current_tier_emoji: str
+    score: float
+    display_score: float
+    min_score_in_tier: float
+    max_score_in_tier: Optional[float]
+    progress_percent: float
+    total_tiers: int
+    tier_index: int
+    all_tiers: list[RainbowTierResponse]
+    recent_deltas: list[dict]
+
+
+class RewardItemResponse(BaseModel):
+    key: str
+    name: str
+    icon: str
+    cost: float
+    can_afford: bool
+    locked: bool
+
+
+class RewardsResponse(BaseModel):
+    current_score: float
+    available_vouches: list[RewardItemResponse]
+    redeemed_vouches: list[dict]
+    can_redeem: bool
+    next_unlock_tier: Optional[str] = None
+    next_unlock_score: Optional[float] = None
+
+
+class VibeCheckRequest(BaseModel):
+    session_id: UUID
+    vibe: VibeEnum
+    notes: Optional[str] = Field(default=None, max_length=1000)
+
+
+class VibeCheckResponse(BaseModel):
+    session_id: UUID
+    vibe: VibeEnum
+    vibe_emoji: str
+    character_assigned: CharacterEnum
+    character_name: str
+    message: str
+    safe_harbor_level: SafeHarborEnum
 
 
 # ============================================================
