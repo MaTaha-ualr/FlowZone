@@ -112,6 +112,15 @@ export default function MentorNotes() {
     let cancelled = false
     setLoading(true)
     setError('')
+    // Hard reset when the URL userId changes so we never flash the previous
+    // youth's data while the new fetch is in-flight.
+    setYouth(null)
+    setNotes([])
+    setContent('')
+    setVouchPoints(0)
+    setRiskFlag(false)
+    setNoteType('check_in')
+    setSaveError('')
 
     Promise.all([
       getMentorDashboard(userId),
