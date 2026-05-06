@@ -1,220 +1,247 @@
-# FlowZone — The Trust Engine & Gamification Framework
+# FlowZone Backend
 
-Multi-model AI chatbot for high-risk youth with adaptive characters, voice input, RAG, and gamified trust scoring.
+FlowZone is a FastAPI backend for the Trust Engine and gamified youth support workflow. It provides username/password auth, JWT-protected chat sessions, adaptive character routing, vibe checks, voice endpoints, RAG/document support, trust scoring, rewards, and mentor/admin views.
 
-## Architecture Overview
+Current API version: `0.2.1`
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                     Frontend (Web App)                    │
-│            Voice Input │ Text Chat │ Vibe Selector        │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│                    FastAPI Backend                        │
-│                                                          │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐             │
-│  │ Session   │  │ Rate     │  │ Concurrency│             │
-│  │ Manager   │  │ Limiter  │  │ Guard (5)  │             │
-│  └─────┬────┘  └──────────┘  └───────────┘             │
-│        │                                                 │
-│        ▼                                                 │
-│  ┌─────────────────────────────────────┐                │
-│  │          Model Router               │                │
-│  │  ┌───────┐ ┌────────┐ ┌──────┐    │                │
-│  │  │Budget │ │Provider│ │Fallback│    │                │
-│  │  │Check  │ │Select  │ │Chain  │    │                │
-│  │  └───────┘ └────────┘ └──────┘    │                │
-│  └──────────────┬──────────────────────┘                │
-│                 │                                        │
-│     ┌───────┬──┴──┬────────┬────────┐                  │
-│     ▼       ▼     ▼        ▼        ▼                  │
-│  Claude  GPT-4o  Gemini   Llama   Whisper              │
-│  (Paid)  (Cheap) (Free)   (Free)  (STT)               │
-│                                                          │
-│  ┌──────────────┐  ┌────────────┐  ┌──────────┐       │
-│  │ RAG Pipeline  │  │Trust Engine│  │ Safe     │       │
-│  │ ChromaDB +    │  │ Shield     │  │ Harbor   │       │
-│  │ Google Drive  │  │ Formula    │  │ Protocol │       │
-│  └──────────────┘  └────────────┘  └──────────┘       │
-│                                                          │
-│                  ┌──────────┐                            │
-│                  │PostgreSQL│                            │
-│                  └──────────┘                            │
-└─────────────────────────────────────────────────────────┘
-```
+Canonical production branch: `master`
 
-## Quick Start (Local Development)
+`main` is kept in sync for visibility, but GitHub reports `master` as the repository HEAD/default branch.
+
+## Production Status
+
+The current production-ready commit includes:
+
+- Real username/password auth with bearer JWTs.
+- `role` support for `youth` and `mentor`.
+- Dashboard profile endpoints for streak, score, tier, character, and Safe Harbor status.
+- Rainbow Circle and rewards endpoints for the menu drawer.
+- Vibe check endpoint that updates session vibe, character, and Safe Harbor level.
+- WebSocket chat endpoint at `/ws/{session_id}?token=JWT`.
+- Request ID logging, rate limiting, and demo-mode bypass for controlled pilot testing.
+- Alembic migration for the new auth/profile user fields.
+
+The Docker and Procfile startup commands run `alembic upgrade head` before starting Uvicorn. The migration is idempotent so it is safe for both fresh databases and existing Railway databases.
+
+## Quick Start
 
 ### Prerequisites
-- Docker & Docker Compose
-- Git
 
-### 1. Clone and configure
+- Python 3.12 or Docker
+- PostgreSQL for normal local development
+- At least one model provider key. `GROQ_API_KEY` is the easiest free-tier starting point.
+
+### Local With Docker
+
 ```bash
-git clone <your-repo-url>
-cd flowzone
+git clone https://github.com/MaTaha-ualr/FlowZone.git
+cd FlowZone
 cp .env.example .env
-# Edit .env — add your API keys (at minimum, GROQ_API_KEY for free-tier models)
+docker compose up --build
 ```
 
-### 2. Start the stack
+Open:
+
+- Health: `http://localhost:8000/health`
+- API docs: `http://localhost:8000/docs`
+
+### Local Python
+
 ```bash
-docker compose up
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env
+alembic upgrade head
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-This starts:
-- **PostgreSQL** on port 5432
-- **FlowZone API** on port 8000
+## Required Environment
 
-### 3. Verify it works
+Minimum production variables:
+
 ```bash
-# Health check
-curl http://localhost:8000/health
-
-# Swagger docs
-open http://localhost:8000/docs
+APP_ENV=production
+APP_DEBUG=false
+APP_SECRET_KEY=<32+ random chars>
+APP_DEMO_MODE=false
+CORS_ORIGINS=https://your-frontend-domain.com
+DATABASE_URL=<Railway/Postgres URL>
+GROQ_API_KEY=<optional but recommended>
 ```
 
-### 4. Seed test data (Marcus Cole)
+Important notes:
+
+- `DATABASE_URL` may be `postgres://`, `postgresql://`, or `postgresql+asyncpg://`; the app normalizes it.
+- `APP_DEMO_MODE=false` is the correct production setting.
+- Use `APP_DEMO_MODE=true` only for controlled pilots where `X-User-ID` bypass auth is acceptable.
+- `CORS_ORIGINS=*` is for development only.
+
+## Railway Deployment
+
+This repository includes:
+
+- `Dockerfile`
+- `railway.json`
+- `Procfile`
+
+Railway should deploy from `master`.
+
+Startup runs:
+
 ```bash
-docker compose exec app python -m scripts.seed_data
+alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
 ```
 
-### 5. Test the API flow
+Railway health check:
+
+```text
+/health
+```
+
+Recommended Railway variables:
+
 ```bash
-# List users
-curl http://localhost:8000/api/v1/users
+APP_ENV=production
+APP_DEBUG=false
+APP_SECRET_KEY=<generated secret>
+APP_DEMO_MODE=false
+APP_FRONTEND_URL=https://your-frontend-domain.com
+CORS_ORIGINS=https://your-frontend-domain.com
+GROQ_API_KEY=<key>
+DATABASE_URL=<set by Railway PostgreSQL plugin>
+```
 
-# Start a session for Marcus
-curl -X POST http://localhost:8000/api/v1/sessions/<marcus_user_id>
+## Auth Flow
 
-# Send a message
-curl -X POST http://localhost:8000/api/v1/chat/<session_id> \
+Register:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"content": "Yeah I'\''m good. School was whatever.", "vibe": "solid"}'
-
-# Check budget
-curl http://localhost:8000/api/v1/admin/budget
+  -d '{
+    "name": "Marcus Johnson",
+    "username": "marcus_j",
+    "password": "secure123",
+    "email": "marcus@example.com",
+    "phone": "501-555-0100",
+    "age": 17,
+    "role": "youth",
+    "school_name": "Central High",
+    "city": "Little Rock",
+    "state": "AR",
+    "has_probation": false,
+    "has_case_worker": true
+  }'
 ```
 
-## Deploy to Railway
+Login:
 
-### 1. Create Railway project
 ```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Login and init
-railway login
-railway init
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "marcus_j", "password": "secure123"}'
 ```
 
-### 2. Add PostgreSQL
+Use the returned token:
+
 ```bash
-railway add --plugin postgresql
+curl http://localhost:8000/api/v1/profile/me \
+  -H "Authorization: Bearer <token>"
 ```
 
-### 3. Set environment variables
+## Frontend Endpoints
+
+Public:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Basic health check |
+| `GET` | `/health/detailed` | Subsystem health |
+| `POST` | `/api/v1/auth/register` | Create account and return JWT |
+| `POST` | `/api/v1/auth/login` | Login and return JWT |
+
+Protected:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/profile/me` | Dashboard/profile data |
+| `GET` | `/api/v1/profile/rainbow-circle` | Tier visualization data |
+| `GET` | `/api/v1/profile/rewards` | Reward/vouch store data |
+| `POST` | `/api/v1/vibe/check` | Set vibe and character state |
+| `POST` | `/api/v1/sessions/{user_id}` | Start or resume a session |
+| `GET` | `/api/v1/sessions/{user_id}/current` | Get active session |
+| `POST` | `/api/v1/chat/{session_id}` | Send chat message |
+| `GET` | `/api/v1/chat/{session_id}/history` | Read chat history |
+| `GET` | `/api/v1/chat/{session_id}/stream` | SSE chat stream |
+| `WS` | `/ws/{session_id}?token=JWT` | WebSocket chat |
+| `POST` | `/api/v1/voice/transcribe` | Speech to text |
+| `POST` | `/api/v1/voice/synthesize` | Text to speech |
+| `GET` | `/api/v1/trust/{user_id}` | Trust score detail |
+| `POST` | `/api/v1/trust/{user_id}/vouch` | Redeem a reward |
+| `GET` | `/api/v1/mentors/dashboard/{user_id}` | Mentor dashboard |
+
+## Vibe Check Example
+
 ```bash
-railway variables set APP_ENV=production
-railway variables set APP_DEBUG=false
-railway variables set APP_SECRET_KEY=$(openssl rand -hex 32)
-# Add your API keys
-railway variables set GROQ_API_KEY=gsk_...
+curl -X POST http://localhost:8000/api/v1/vibe/check \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "<session_uuid>",
+    "vibe": "angry",
+    "notes": "Got in a fight at school"
+  }'
 ```
 
-### 4. Deploy
+Response includes:
+
+```json
+{
+  "vibe": "angry",
+  "character_assigned": "challenger",
+  "character_name": "Vex",
+  "safe_harbor_level": "yellow"
+}
+```
+
+## Trust Tiers
+
+The backend currently has three canonical trust tiers:
+
+| Key | Display Name | Threshold |
+| --- | --- | --- |
+| `the_watch` | The Watch | `0` |
+| `the_flex` | The Flex | `200` |
+| `the_vetted` | The Vetted | `500` |
+
+The frontend plan referenced five display tiers. This backend intentionally preserves the existing trust engine thresholds and exposes display metadata for the three canonical tiers.
+
+## Tests
+
+Run the full suite:
+
 ```bash
-railway up
+.\.venv\Scripts\python.exe -m pytest
 ```
 
-Railway auto-detects the Dockerfile, builds, and deploys. The DATABASE_URL is automatically set by the PostgreSQL plugin.
+Current verified result on the production commit:
 
-## Project Structure
-
-```
-flowzone/
-├── app/
-│   ├── api/routes/          # API endpoints
-│   │   ├── health.py        # GET /health
-│   │   ├── users.py         # CRUD + intake
-│   │   ├── sessions.py      # Session management
-│   │   ├── chat.py          # Core chat endpoint
-│   │   └── admin.py         # Budget monitoring
-│   ├── core/
-│   │   ├── config.py        # All settings (pydantic-settings)
-│   │   ├── constants.py     # Characters, models, scoring rules
-│   │   └── safe_harbor.py   # Safety protocol logic
-│   ├── middleware/
-│   │   └── rate_limit.py    # Rate limiting + concurrency guard
-│   ├── models/              # SQLAlchemy database models
-│   │   ├── user.py          # Youth profiles
-│   │   ├── session.py       # FlowQuest sessions
-│   │   ├── message.py       # Chat messages
-│   │   ├── trust_score.py   # Shield Formula scores
-│   │   ├── mentor_note.py   # Mentor observations
-│   │   ├── school_data.py   # Academic data
-│   │   ├── document_ref.py  # Google Drive doc references
-│   │   ├── api_usage.py     # Credit tracking
-│   │   ├── vouch.py         # Gamification vouches
-│   │   └── pattern.py       # Cross-user patterns
-│   ├── schemas/
-│   │   └── api.py           # Pydantic request/response models
-│   ├── services/            # Business logic (next phase)
-│   │   ├── model_router/    # LLM routing + fallbacks
-│   │   ├── characters/      # Character system prompts
-│   │   ├── voice/           # STT + TTS pipelines
-│   │   ├── rag/             # RAG pipeline + ChromaDB
-│   │   └── trust_engine/    # Score calculation + Truth Engine
-│   ├── database.py          # Async SQLAlchemy setup
-│   └── main.py              # FastAPI app entry point
-├── scripts/
-│   └── seed_data.py         # Load test data
-├── tests/
-├── docker-compose.yml       # Local dev stack
-├── Dockerfile               # Production container
-├── railway.json             # Railway deployment config
-├── requirements.txt
-└── .env.example
+```text
+130 passed
 ```
 
-## Key Design Decisions
+## Project Layout
 
-| Decision | Choice | Why |
-|----------|--------|-----|
-| Framework | FastAPI | Async-native, auto-docs, Python ecosystem |
-| Database | PostgreSQL (async) | RLS for privacy, JSON columns, production-ready |
-| ORM | SQLAlchemy 2.0 async | Type-safe, migration support via Alembic |
-| Vector DB | ChromaDB (embedded) | No separate server, Python-native, perfect for <10K vectors |
-| Model Router | Custom (in-app) | Tight budget control, character-specific routing, fallback chains |
-| Session Management | DB-backed | Resumable across days, no Redis dependency for MVP |
-| Auth | Placeholder | JWT planned for production, skipped for MVP speed |
-
-## API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Basic health check |
-| GET | `/health/detailed` | Full subsystem status |
-| POST | `/api/v1/users` | Create user |
-| GET | `/api/v1/users` | List users |
-| GET | `/api/v1/users/{id}` | Get user |
-| POST | `/api/v1/users/{id}/intake` | Submit Strategic Intake |
-| POST | `/api/v1/sessions/{user_id}` | Start/resume session |
-| GET | `/api/v1/sessions/{user_id}/current` | Get active session |
-| POST | `/api/v1/chat/{session_id}` | Send message |
-| GET | `/api/v1/chat/{session_id}/history` | Get chat history |
-| GET | `/api/v1/admin/budget` | Budget status |
-| GET | `/api/v1/admin/models` | Model availability |
-
-## Next Steps (Build Order)
-
-1. **Model Router** — Connect actual LLM APIs with fallback chains
-2. **Character System Prompts** — Craft prompts for Challenger, Navigator, Straight Shooter, Strategist
-3. **Voice Pipeline** — Groq Whisper STT + Edge TTS
-4. **RAG Pipeline** — ChromaDB + document ingestion + Google Drive OAuth
-5. **Trust Engine** — Live score calculation + mask detection
-6. **Mentor Dashboard** — Note submission + sanitization
-7. **Gamification** — Vouches, tiers, decay
+```text
+app/
+  api/routes/       FastAPI routers
+  core/             config, security, constants, safety
+  middleware/       request IDs, rate limiting
+  models/           SQLAlchemy models
+  schemas/          Pydantic request/response models
+  services/         model routing, trust engine, RAG, voice
+alembic/            database migrations
+scripts/            seed and ingestion helpers
+tests/              pytest suite
+```

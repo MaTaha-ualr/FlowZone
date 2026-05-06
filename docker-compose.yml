@@ -51,8 +51,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # Override CMD for development (with auto-reload)
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # Override CMD for development, but still run migrations for existing volumes.
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s

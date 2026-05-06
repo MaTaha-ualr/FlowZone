@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     # ---- Google Drive OAuth ----
     google_client_id: Optional[str] = None
     google_client_secret: Optional[str] = None
-    google_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
+    google_redirect_uri: str = "http://localhost:8000/api/v1/documents/google-drive/callback"
     google_oauth_scopes: list[str] = Field(
         default_factory=lambda: [
             "https://www.googleapis.com/auth/drive.readonly",
