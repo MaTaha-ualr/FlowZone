@@ -66,6 +66,12 @@ class GroqProvider(BaseLLMProvider):
             "temperature": request.temperature,
             "messages": messages,
         }
+        if request.top_p is not None:
+            payload["top_p"] = request.top_p
+        if request.frequency_penalty is not None:
+            payload["frequency_penalty"] = request.frequency_penalty
+        if request.presence_penalty is not None:
+            payload["presence_penalty"] = request.presence_penalty
 
         response = await client.post(self.BASE_URL, json=payload)
         response.raise_for_status()
@@ -102,6 +108,12 @@ class GroqProvider(BaseLLMProvider):
             "messages": messages,
             "stream": True,
         }
+        if request.top_p is not None:
+            payload["top_p"] = request.top_p
+        if request.frequency_penalty is not None:
+            payload["frequency_penalty"] = request.frequency_penalty
+        if request.presence_penalty is not None:
+            payload["presence_penalty"] = request.presence_penalty
 
         tokens_in = 0
         tokens_out = 0

@@ -68,6 +68,8 @@ class AnthropicProvider(BaseLLMProvider):
         }
         if system_msg:
             payload["system"] = system_msg
+        if request.top_p is not None:
+            payload["top_p"] = request.top_p
 
         response = await client.post(self.BASE_URL, json=payload)
         response.raise_for_status()
@@ -119,6 +121,8 @@ class AnthropicProvider(BaseLLMProvider):
         }
         if system_msg:
             payload["system"] = system_msg
+        if request.top_p is not None:
+            payload["top_p"] = request.top_p
 
         tokens_in = 0
         tokens_out = 0

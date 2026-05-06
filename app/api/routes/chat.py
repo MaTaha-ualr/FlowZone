@@ -24,7 +24,7 @@ from app.models.session import Session
 from app.models.message import Message
 from app.models.user import User
 from app.schemas.api import ChatRequest, ChatResponse, ChatHistoryResponse
-from app.core.constants import Vibe
+from app.core.constants import Vibe, get_gen_params
 from app.core.security import get_current_user
 from app.core.sanitize import sanitize_chat_input
 from app.middleware.rate_limit import rate_limiter
@@ -262,7 +262,8 @@ async def send_message(
         db=db,
     )
 
-    # Route to Model Router
+    # Route to Model Router with per-character generation params
+    gen_params = get_gen_params(session.character_active)
     start_time = time.time()
     response = await model_router.route(
         character=session.character_active,
@@ -270,8 +271,11 @@ async def send_message(
         db=db,
         user_id=current_user.id,
         session_id=session.id,
-        max_tokens=1024,
-        temperature=0.7,
+        max_tokens=gen_params["max_tokens"],
+        temperature=gen_params["temperature"],
+        top_p=gen_params.get("top_p"),
+        frequency_penalty=gen_params.get("frequency_penalty"),
+        presence_penalty=gen_params.get("presence_penalty"),
         stream=False,
     )
     response_time = int((time.time() - start_time) * 1000)
@@ -352,6 +356,8 @@ async def stream_message(
         session=session, user=current_user, new_message=content, db=db,
     )
 
+    gen_params = get_gen_params(session.character_active)
+
     async def event_generator():
         full_content = ""
         try:
@@ -361,6 +367,11 @@ async def stream_message(
                 db=db,
                 user_id=current_user.id,
                 session_id=session.id,
+                max_tokens=gen_params["max_tokens"],
+                temperature=gen_params["temperature"],
+                top_p=gen_params.get("top_p"),
+                frequency_penalty=gen_params.get("frequency_penalty"),
+                presence_penalty=gen_params.get("presence_penalty"),
                 stream=True,
             )
             async for chunk in stream:

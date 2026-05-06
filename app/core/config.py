@@ -20,10 +20,12 @@ class Environment(str, Enum):
 class STTProvider(str, Enum):
     BROWSER = "browser"
     GROQ_WHISPER = "groq_whisper"
+    OPENAI_WHISPER = "openai_whisper"
     DEEPGRAM = "deepgram"
 
 class TTSProvider(str, Enum):
     EDGE_TTS = "edge_tts"
+    OPENAI_TTS = "openai_tts"
     NONE = "none"
 
 class Settings(BaseSettings):
@@ -58,8 +60,10 @@ class Settings(BaseSettings):
     budget_tier_yellow: float = 0.85
 
     # ---- Voice Pipeline ----
-    stt_provider: STTProvider = STTProvider.GROQ_WHISPER
-    tts_provider: TTSProvider = TTSProvider.EDGE_TTS
+    stt_provider: STTProvider = STTProvider.OPENAI_WHISPER
+    tts_provider: TTSProvider = TTSProvider.OPENAI_TTS
+    openai_tts_model: str = "tts-1-hd"  # tts-1 for low-latency, tts-1-hd for quality
+    openai_stt_model: str = "whisper-1"
 
     # ---- RAG ----
     chroma_persist_dir: str = "/app/data/chromadb"

@@ -129,34 +129,85 @@ CHARACTER_MODEL_MAP = {
     Character.CHALLENGER: {
         "primary": {"provider": ModelProvider.ANTHROPIC, "model": ModelID.CLAUDE_SONNET},
         "fallbacks": [
-            {"provider": ModelProvider.GOOGLE, "model": ModelID.GEMINI_FLASH},
+            {"provider": ModelProvider.OPENAI, "model": ModelID.GPT_4O_MINI},
             {"provider": ModelProvider.GROQ, "model": ModelID.LLAMA_70B},
         ],
-        "description": "Needs strong persona adherence and nuanced pushback. Worth the premium."
+        "description": "Needs strong persona adherence and nuanced pushback. Claude is worth the premium."
     },
     Character.NAVIGATOR: {
-        "primary": {"provider": ModelProvider.GOOGLE, "model": ModelID.GEMINI_FLASH},
+        "primary": {"provider": ModelProvider.OPENAI, "model": ModelID.GPT_4O_MINI},
         "fallbacks": [
+            {"provider": ModelProvider.ANTHROPIC, "model": ModelID.CLAUDE_SONNET},
             {"provider": ModelProvider.GROQ, "model": ModelID.LLAMA_70B},
         ],
-        "description": "Empathetic guidance. Gemini free tier handles this well."
+        "description": "Empathetic guidance. GPT-4o-mini is warm + cheap, Claude as quality fallback."
     },
     Character.STRAIGHT_SHOOTER: {
         "primary": {"provider": ModelProvider.GROQ, "model": ModelID.LLAMA_70B},
         "fallbacks": [
-            {"provider": ModelProvider.GOOGLE, "model": ModelID.GEMINI_FLASH},
+            {"provider": ModelProvider.OPENAI, "model": ModelID.GPT_4O_MINI},
         ],
-        "description": "Direct and tactical. Shorter responses = smaller models work great."
+        "description": "Direct and tactical. Llama-70B on Groq is fast and free, GPT-4o-mini as backup."
     },
     Character.STRATEGIST: {
-        "primary": {"provider": ModelProvider.OPENAI, "model": ModelID.GPT_4O_MINI},
+        "primary": {"provider": ModelProvider.ANTHROPIC, "model": ModelID.CLAUDE_SONNET},
         "fallbacks": [
-            {"provider": ModelProvider.GOOGLE, "model": ModelID.GEMINI_FLASH},
+            {"provider": ModelProvider.OPENAI, "model": ModelID.GPT_4O_MINI},
             {"provider": ModelProvider.GROQ, "model": ModelID.LLAMA_70B},
         ],
-        "description": "Long-game optimization. GPT-4o-mini is cheap and strategic."
+        "description": "Long-game optimization. Claude reasons best, GPT-4o-mini is cheap fallback."
     },
 }
+
+
+# ============================================================
+# PER-CHARACTER GENERATION PARAMETERS
+# ============================================================
+# Tuned to make each character sound like itself rather than the same model
+# voice in different costumes.
+#   - temperature: higher = looser, more conversational; lower = focused/tactical
+#   - max_tokens:  caps reply length, reinforces the brevity baked into prompts
+#   - top_p:       slight nucleus narrowing for the more disciplined characters
+#   - frequency_penalty: discourages the "I hear you / it sounds like" loop
+
+CHARACTER_GEN_PARAMS = {
+    Character.CHALLENGER: {
+        "temperature": 0.85,   # spontaneous, edgier; less canned
+        "max_tokens": 400,
+        "top_p": 0.95,
+        "frequency_penalty": 0.4,
+        "presence_penalty": 0.3,
+    },
+    Character.NAVIGATOR: {
+        "temperature": 0.6,    # steady, deliberate, low-key
+        "max_tokens": 380,
+        "top_p": 0.9,
+        "frequency_penalty": 0.5,
+        "presence_penalty": 0.2,
+    },
+    Character.STRAIGHT_SHOOTER: {
+        "temperature": 0.5,    # tactical, low variance, get-to-the-point
+        "max_tokens": 320,
+        "top_p": 0.85,
+        "frequency_penalty": 0.4,
+        "presence_penalty": 0.2,
+    },
+    Character.STRATEGIST: {
+        "temperature": 0.7,    # balanced, long-form when needed
+        "max_tokens": 600,
+        "top_p": 0.92,
+        "frequency_penalty": 0.3,
+        "presence_penalty": 0.2,
+    },
+}
+
+
+def get_gen_params(character: Character) -> dict:
+    """Return generation params for a character with sane fallbacks."""
+    return CHARACTER_GEN_PARAMS.get(
+        character,
+        CHARACTER_GEN_PARAMS[Character.NAVIGATOR],
+    )
 
 
 # ============================================================
@@ -172,16 +223,20 @@ class TaskType(str, Enum):
 
 
 TASK_MODEL_MAP = {
+    # Analytical: mask detection, sentiment, JSON extraction.
+    # Needs reliable structured output — GPT-4o-mini is fast/cheap and handles JSON well.
     TaskType.ANALYTICAL: {
-        "primary": {"provider": ModelProvider.GOOGLE, "model": ModelID.GEMINI_FLASH},
+        "primary": {"provider": ModelProvider.OPENAI, "model": ModelID.GPT_4O_MINI},
         "fallbacks": [
             {"provider": ModelProvider.GROQ, "model": ModelID.LLAMA_70B},
         ],
     },
+    # Utility: sanitization, summarization. Llama-8B on Groq is plenty for these.
     TaskType.UTILITY: {
         "primary": {"provider": ModelProvider.GROQ, "model": ModelID.LLAMA_8B},
         "fallbacks": [
-            {"provider": ModelProvider.GOOGLE, "model": ModelID.GEMINI_FLASH},
+            {"provider": ModelProvider.GROQ, "model": ModelID.LLAMA_70B},
+            {"provider": ModelProvider.OPENAI, "model": ModelID.GPT_4O_MINI},
         ],
     },
 }

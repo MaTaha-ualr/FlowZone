@@ -101,6 +101,9 @@ class ModelRouter:
         session_id=None,
         max_tokens: int = 1024,
         temperature: float = 0.7,
+        top_p: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
         stream: bool = False,
     ) -> LLMResponse | AsyncGenerator[LLMStreamChunk, None]:
         """
@@ -129,6 +132,9 @@ class ModelRouter:
             session_id=session_id,
             max_tokens=max_tokens,
             temperature=temperature,
+            top_p=top_p,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
             stream=stream,
             character=character.value,
         )
@@ -253,6 +259,9 @@ class ModelRouter:
         session_id=None,
         max_tokens: int = 1024,
         temperature: float = 0.7,
+        top_p: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
         stream: bool = False,
         character: str = None,
     ) -> LLMResponse | AsyncGenerator[LLMStreamChunk, None]:
@@ -287,6 +296,9 @@ class ModelRouter:
                     model=model_id,
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    top_p=top_p,
+                    frequency_penalty=frequency_penalty,
+                    presence_penalty=presence_penalty,
                     stream=stream,
                     task_type=task_type_str,
                     character=character,

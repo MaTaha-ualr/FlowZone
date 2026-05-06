@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas.api import TranscriptionResponse, TTSRequest
-from app.services.voice.service import voice_service, CHARACTER_VOICES
+from app.services.voice.service import voice_service, _active_character_voices
 from app.core.constants import Character
 from app.core.config import settings
 from app.core.security import get_current_user
@@ -56,9 +56,9 @@ async def transcribe_audio(
         )
         return TranscriptionResponse(
             text=result["text"],
-            confidence=None,
+            confidence=result.get("confidence"),
             duration_seconds=result.get("duration"),
-            provider="groq_whisper",
+            provider=result.get("provider", settings.stt_provider.value),
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -105,9 +105,12 @@ async def list_voices(
 ):
     """List available TTS voices."""
     voices = await voice_service.get_available_voices()
+    active_map = _active_character_voices()
     return {
+        "tts_provider": settings.tts_provider.value,
+        "stt_provider": settings.stt_provider.value,
         "character_mapping": {
-            c.value: CHARACTER_VOICES.get(c, "unknown")
+            c.value: active_map.get(c, "unknown")
             for c in Character
         },
         "available_voices": voices[:20],

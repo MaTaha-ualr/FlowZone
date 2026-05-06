@@ -27,7 +27,7 @@ from app.models.message import Message
 from app.models.user import User
 from app.core.security import decode_token
 from app.core.config import settings
-from app.core.constants import Vibe
+from app.core.constants import Vibe, get_gen_params
 from app.core.sanitize import sanitize_chat_input
 from app.services.model_router import model_router, LLMMessage
 from app.services.characters.prompts import get_character_prompt_with_context
@@ -178,6 +178,7 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
                     messages.append(LLMMessage(role=msg.role, content=msg.content))
                 messages.append(LLMMessage(role="user", content=sanitized))
 
+                gen_params = get_gen_params(session.character_active)
                 try:
                     stream = await model_router.route(
                         character=session.character_active,
@@ -185,6 +186,11 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
                         db=db,
                         user_id=user.id,
                         session_id=session.id,
+                        max_tokens=gen_params["max_tokens"],
+                        temperature=gen_params["temperature"],
+                        top_p=gen_params.get("top_p"),
+                        frequency_penalty=gen_params.get("frequency_penalty"),
+                        presence_penalty=gen_params.get("presence_penalty"),
                         stream=True,
                     )
                     async for chunk in stream:
