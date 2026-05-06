@@ -22,6 +22,7 @@ from app.models import (
     SchoolData, DocumentRef, ApiUsage, Vouch, Pattern,
 )
 from app.core.constants import Character, Vibe, SafeHarborLevel, TrustTier
+from app.core.config import settings
 from app.core.security import get_current_user
 from app.services.model_router.base_provider import LLMResponse
 
@@ -57,6 +58,8 @@ async def db_session(db_engine):
 @pytest.fixture
 async def client(db_engine):
     factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    original_demo_mode = settings.app_demo_mode
+    settings.app_demo_mode = True
 
     async def override_get_db():
         async with factory() as session:
@@ -90,9 +93,12 @@ async def client(db_engine):
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.clear()
+        settings.app_demo_mode = original_demo_mode
 
 
 # ============================================================
@@ -116,7 +122,7 @@ def mock_model_router():
 
 @pytest.fixture
 def mock_mask_detection():
-    with patch("app.api.routes.chat.detect_mask") as mock:
+    with patch("app.services.trust_engine.mask_detection.detect_mask") as mock:
         mock.return_value = {
             "detected_vibe": "solid", "confidence": 0.3,
             "mask_detected": False, "reasoning": "no mask in test",
@@ -127,7 +133,7 @@ def mock_mask_detection():
 
 @pytest.fixture
 def mock_extract_session_data():
-    with patch("app.api.routes.chat.extract_session_data") as mock:
+    with patch("app.services.trust_engine.mask_detection.extract_session_data") as mock:
         mock.return_value = {
             "traps": ["peer_pressure"], "moves": ["attended_school"],
             "goals": ["get_grades_up"], "emotional_state": "tired",
@@ -138,7 +144,7 @@ def mock_extract_session_data():
 
 @pytest.fixture
 def mock_trust_calculator():
-    with patch("app.api.routes.chat.recalculate_after_session") as mock:
+    with patch("app.services.trust_engine.calculator.recalculate_after_session") as mock:
         mock.return_value = {
             "previous_score": 95.0, "new_score": 99.8, "delta": 4.8,
             "components": {}, "tier_change": False,

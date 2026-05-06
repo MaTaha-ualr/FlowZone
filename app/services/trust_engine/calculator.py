@@ -37,6 +37,11 @@ def _as_naive_utc(value: datetime) -> datetime:
         return value
     return value.astimezone(timezone.utc).replace(tzinfo=None)
 
+
+def _utcnow_naive() -> datetime:
+    """Return UTC now as a naive datetime for asyncpg-compatible DB columns."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 # ------------------------------------------------------------------
 # MAIN: Recalculate after a session
 # ------------------------------------------------------------------
@@ -112,7 +117,7 @@ async def recalculate_after_session(
     )
     first_session_date = first_session_result.scalar()
     if first_session_date:
-        days_active = max(1, (datetime.utcnow() - _as_naive_utc(first_session_date)).days)
+        days_active = max(1, (_utcnow_naive() - _as_naive_utc(first_session_date)).days)
     else:
         days_active = 1
 
@@ -213,7 +218,7 @@ async def _update_streak(user: User, db: AsyncSession) -> int:
 
     if last_checkin is None:
         user.check_in_streak = 1
-        user.last_check_in = datetime.utcnow()
+        user.last_check_in = _utcnow_naive()
         return 1
 
     last_date = _as_naive_utc(last_checkin).date()
@@ -226,7 +231,7 @@ async def _update_streak(user: User, db: AsyncSession) -> int:
     else:
         user.check_in_streak = 1
 
-    user.last_check_in = datetime.utcnow()
+    user.last_check_in = _utcnow_naive()
     return user.check_in_streak
 
 # ------------------------------------------------------------------
@@ -250,7 +255,7 @@ async def apply_credit_decay(db: AsyncSession) -> list[dict]:
     Apply credit decay for users who haven't checked in for 72+ hours.
     Should be called daily via cron or background task.
     """
-    threshold = datetime.utcnow() - timedelta(
+    threshold = _utcnow_naive() - timedelta(
         hours=TRUST_SCORE_WEIGHTS["decay_threshold_hours"]
     )
     decay_rate = TRUST_SCORE_WEIGHTS["credit_decay_rate"]
@@ -271,7 +276,7 @@ async def apply_credit_decay(db: AsyncSession) -> list[dict]:
         user.current_trust_score = max(0.0, old_score - decay_amount)
         user.current_tier = _calculate_tier(user.current_trust_score)
 
-        days_silent = (datetime.utcnow() - _as_naive_utc(user.last_check_in)).days
+        days_silent = (_utcnow_naive() - _as_naive_utc(user.last_check_in)).days
 
         affected.append({
             "user_id": str(user.id),
@@ -327,7 +332,7 @@ async def redeem_vouch(
             "error": f"Not enough credits. Need {cost}, have {user.current_trust_score:.0f}"
         }
 
-    expires_at = datetime.utcnow() + timedelta(hours=VOUCH_CONFIG["expiry_hours"])
+    expires_at = _utcnow_naive() + timedelta(hours=VOUCH_CONFIG["expiry_hours"])
     vouch = Vouch(
         user_id=user_id,
         vouch_type=vouch_type,
@@ -358,7 +363,7 @@ async def redeem_vouch(
 
 async def expire_vouches(db: AsyncSession) -> int:
     """Expire vouches past their 48-hour window."""
-    now = datetime.utcnow()
+    now = _utcnow_naive()
     result = await db.execute(
         select(Vouch).where(and_(
             Vouch.status == "active",

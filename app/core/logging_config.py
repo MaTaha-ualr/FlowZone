@@ -8,7 +8,16 @@ import logging
 import sys
 import json
 from datetime import datetime, timezone
-from typing import Any
+
+from app.middleware.request_id import request_id_var
+
+class RequestIDFilter(logging.Filter):
+    """Attach the current request ID without mutating global log factories."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not hasattr(record, "request_id"):
+            record.request_id = request_id_var.get()
+        return True
 
 class JSONFormatter(logging.Formatter):
     """Emit log records as single-line JSON."""
@@ -42,6 +51,7 @@ def setup_logging(level: int = logging.INFO):
         root.removeHandler(handler)
 
     handler = logging.StreamHandler(sys.stdout)
+    handler.addFilter(RequestIDFilter())
     handler.setFormatter(JSONFormatter())
     root.addHandler(handler)
 

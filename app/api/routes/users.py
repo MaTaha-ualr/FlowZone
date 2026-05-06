@@ -8,7 +8,7 @@ Changes:
 """
 
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database import get_db
@@ -21,7 +21,8 @@ from app.core.constants import (
     Character, CHARACTER_ASSIGNMENT_RULES, Vibe,
     INTAKE_SCORING, SafeHarborLevel
 )
-from app.core.security import get_current_user
+from app.core.config import settings
+from app.core.security import get_current_user, get_current_user_optional
 
 router = APIRouter(prefix="/api/v1/users", tags=["Users"])
 
@@ -29,9 +30,24 @@ router = APIRouter(prefix="/api/v1/users", tags=["Users"])
 async def create_user(
     data: UserCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
-    """Register a new youth user."""
+    """Register a youth user.
+
+    Bootstrap and pilot demo mode can create a user without an existing token.
+    Once users exist in non-demo mode, this endpoint requires authentication.
+    """
+    if current_user is None and not settings.app_demo_mode:
+        existing_users_result = await db.execute(
+            select(func.count()).select_from(User).where(User.is_active == True)
+        )
+        if (existing_users_result.scalar() or 0) > 0:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required to create additional users.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
     user = User(
         name=data.name,
         age=data.age,

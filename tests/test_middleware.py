@@ -1,7 +1,10 @@
 """Tests for rate limiting and concurrency control."""
 import pytest
 import asyncio
+import logging
+from app.core.logging_config import RequestIDFilter
 from app.middleware.rate_limit import RateLimiter, ConcurrencyGuard
+from app.middleware.request_id import get_request_id, request_id_var
 
 
 class TestRateLimiter:
@@ -72,3 +75,37 @@ class TestConcurrencyGuard:
         await g.check_in("u1")
         await asyncio.sleep(0.01)
         assert await g.check_in("u2") is True
+
+
+class TestRequestIDContext:
+    @pytest.mark.asyncio
+    async def test_request_ids_are_task_local(self):
+        async def read_request_id(value):
+            token = request_id_var.set(value)
+            try:
+                await asyncio.sleep(0)
+                return get_request_id()
+            finally:
+                request_id_var.reset(token)
+
+        assert await asyncio.gather(
+            read_request_id("request-a"),
+            read_request_id("request-b"),
+        ) == ["request-a", "request-b"]
+
+    def test_logging_filter_reads_context_var(self):
+        token = request_id_var.set("filter-request")
+        try:
+            record = logging.LogRecord(
+                name="test",
+                level=logging.INFO,
+                pathname=__file__,
+                lineno=1,
+                msg="message",
+                args=(),
+                exc_info=None,
+            )
+            assert RequestIDFilter().filter(record) is True
+            assert record.request_id == "filter-request"
+        finally:
+            request_id_var.reset(token)

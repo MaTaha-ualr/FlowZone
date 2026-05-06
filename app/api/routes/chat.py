@@ -13,18 +13,18 @@ Changes:
 import uuid
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from app.database import get_db
 from app.models.session import Session
 from app.models.message import Message
 from app.models.user import User
 from app.schemas.api import ChatRequest, ChatResponse, ChatHistoryResponse
-from app.core.constants import Character, VIBE_EMOJI_MAP, Vibe
+from app.core.constants import Vibe
 from app.core.security import get_current_user
 from app.core.sanitize import sanitize_chat_input
 from app.middleware.rate_limit import rate_limiter
@@ -34,8 +34,6 @@ from app.services.session_summarizer import summarize_session_if_needed
 from app.services.model_router import model_router, LLMMessage
 from app.services.characters.prompts import get_character_prompt_with_context
 from app.services.trust_engine.context_builder import build_user_context
-from app.services.trust_engine.mask_detection import detect_mask, extract_session_data
-from app.services.trust_engine.calculator import recalculate_after_session
 from app.services.rag.retriever import retrieve_for_message
 from app.services.rag.rag_classifier import classify as classify_rag
 from app.services.rag.chroma_store import collection_count
@@ -59,6 +57,8 @@ async def _post_message_analysis(
     Runs in a BackgroundTask with its own DB session.
     """
     from app.database import async_session
+    from app.services.trust_engine.calculator import recalculate_after_session
+    from app.services.trust_engine.mask_detection import detect_mask, extract_session_data
 
     async with async_session() as db:
         try:
@@ -314,7 +314,7 @@ async def send_message(
         safe_harbor_level=session.safe_harbor_level,
         trust_score_delta=session.trust_score_delta or 0.0,
         action_item=None,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
 
 # ------------------------------------------------------------------

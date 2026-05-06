@@ -1,5 +1,6 @@
 """Tests for user management and Strategic Intake."""
 import pytest
+from app.core.config import settings
 
 
 @pytest.mark.asyncio
@@ -8,6 +9,26 @@ async def test_create_user(client):
     assert r.status_code == 201
     assert r.json()["name"] == "Test User"
     assert r.json()["intake_completed"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_additional_user_requires_auth_outside_demo(client):
+    original_demo_mode = settings.app_demo_mode
+    settings.app_demo_mode = False
+    try:
+        first = await client.post(
+            "/api/v1/users",
+            json={"name": "Bootstrap", "age": 15, "user_type": "at_risk"},
+        )
+        assert first.status_code == 201
+
+        second = await client.post(
+            "/api/v1/users",
+            json={"name": "Second", "age": 15, "user_type": "at_risk"},
+        )
+        assert second.status_code == 401
+    finally:
+        settings.app_demo_mode = original_demo_mode
 
 
 @pytest.mark.asyncio
