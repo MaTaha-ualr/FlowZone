@@ -1,28 +1,26 @@
 """
-FlowZone — Main Application
-==============================
-The Trust Engine & Gamification Framework for High-Risk Youth.
-
-This is the entry point. It:
-    1. Creates the FastAPI app with metadata
-    2. Registers all routers (health, users, sessions, chat, admin)
-    3. Adds middleware (CORS, rate limiting)
-    4. Sets up startup/shutdown hooks (DB init, connection cleanup)
-
-Run locally:
-    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-Run in Docker:
-    docker compose up
+FlowZone — Main Application (FIXED)
+====================================
+Changes from original:
+  - Structured JSON logging on startup
+  - RequestIDMiddleware added
+  - CORS uses configurable origins (not hardcoded placeholder)
+  - WebSocket router registered
+  - Auth dependencies wired to all routes
+  - Demo mode support
+  - Graceful shutdown with connection cleanup
 """
 
 from contextlib import asynccontextmanager
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.logging_config import setup_logging
 from app.database import init_db, close_db
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.request_id import RequestIDMiddleware
 from app.services.model_router import model_router
 
 # Import all routers
@@ -30,52 +28,50 @@ from app.api.routes.health import router as health_router
 from app.api.routes.users import router as users_router
 from app.api.routes.sessions import router as sessions_router
 from app.api.routes.chat import router as chat_router
-from app.api.routes.admin import router as admin_router
 from app.api.routes.voice import router as voice_router
 from app.api.routes.mentors import router as mentors_router
-from app.api.routes.trust import router as trust_router
 from app.api.routes.documents import router as documents_router
+from app.api.routes.trust import router as trust_router
+from app.api.routes.admin import router as admin_router
+from app.api.routes.ws import router as ws_router
 
+# Setup structured logging immediately
+setup_logging(level=logging.DEBUG if settings.app_debug else logging.INFO)
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Startup and shutdown logic.
-    - On startup: create database tables (MVP approach — Alembic for production)
-    - On shutdown: close database connections gracefully
-    """
+    """Startup and shutdown logic."""
     # ---- Startup ----
-    print("=" * 60)
-    print(f"  FlowZone starting up ({settings.app_env.value})")
-    print(f"  Database: {settings.database_url[:30]}...")
-    print("=" * 60)
+    logger.info("FlowZone starting up", extra={
+        "environment": settings.app_env.value,
+        "demo_mode": settings.app_demo_mode,
+        "frontend_url": settings.app_frontend_url,
+    })
 
     # Import all models so Base.metadata knows about them
     import app.models  # noqa: F401
 
     await init_db()
-    print("  Database tables created/verified.")
+    logger.info("Database tables created/verified")
 
-    # Check which LLM providers are configured
+    # Check LLM providers
     try:
         provider_status = await model_router.check_all_providers()
         for provider, status in provider_status.items():
             icon = "✓" if status == "available" else "✗" if status == "no_api_key" else "⚠"
-            print(f"  {icon} {provider}: {status}")
+            logger.info(f"Provider {provider}: {status}")
     except Exception as e:
-        print(f"  ⚠ Provider health check skipped: {e}")
+        logger.warning(f"Provider health check skipped: {e}")
 
-    print("  FlowZone is ready.")
-    print("=" * 60)
-
+    logger.info("FlowZone is ready")
     yield
 
     # ---- Shutdown ----
-    print("FlowZone shutting down...")
+    logger.info("FlowZone shutting down...")
     await model_router.close_all()
     await close_db()
-    print("All connections closed. Goodbye.")
-
+    logger.info("All connections closed. Goodbye.")
 
 # ---- Create App ----
 app = FastAPI(
@@ -85,29 +81,29 @@ app = FastAPI(
         "Multi-model AI chatbot for high-risk youth with adaptive characters, "
         "voice input, RAG, and gamified trust scoring."
     ),
-    version="0.1.0",
+    version="0.2.0",  # Bumped for this release
     lifespan=lifespan,
-    docs_url="/docs",       # Swagger UI
-    redoc_url="/redoc",     # ReDoc
+    docs_url="/docs",
+    redoc_url="/redoc",
     openapi_url="/openapi.json",
 )
 
+# ---- Middleware (ORDER MATTERS) ----
+# 1. Request ID first (so all downstream logs have request_id)
+app.add_middleware(RequestIDMiddleware)
 
-# ---- Middleware ----
-
-# CORS — allow frontend to connect from any origin in dev
-# Lock this down in production
+# 2. CORS
+origins = settings.cors_origins_list
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.app_debug else ["https://your-frontend-domain.com"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Rate limiting on chat endpoints
+# 3. Rate limiting
 app.add_middleware(RateLimitMiddleware)
-
 
 # ---- Register Routers ----
 app.include_router(health_router)
@@ -119,7 +115,7 @@ app.include_router(mentors_router)
 app.include_router(documents_router)
 app.include_router(trust_router)
 app.include_router(admin_router)
-
+app.include_router(ws_router)  # NEW: WebSocket
 
 # ---- Root Redirect ----
 @app.get("/", include_in_schema=False)
@@ -127,7 +123,8 @@ async def root():
     """Redirect root to API docs."""
     return {
         "service": "FlowZone API",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "docs": "/docs",
         "health": "/health",
+        "websocket": "/ws/{session_id}?token=JWT",
     }

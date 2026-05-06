@@ -1,11 +1,9 @@
 """
-Trust Score & Vouch Routes
-============================
-GET  /api/v1/trust/{user_id}            — Get current score + components
-GET  /api/v1/trust/{user_id}/history    — Score history (for charts)
-POST /api/v1/trust/{user_id}/vouch      — Redeem a vouch (spend credits)
-GET  /api/v1/trust/{user_id}/vouches    — List active/expired vouches
-POST /api/v1/trust/decay                — Admin: trigger credit decay manually
+Trust Score & Vouch Routes (FIXED)
+====================================
+Changes:
+  - Auth required
+  - Users can only access their own data
 """
 
 import uuid
@@ -20,21 +18,24 @@ from app.services.trust_engine.calculator import (
     get_score_history, redeem_vouch, apply_credit_decay, expire_vouches,
 )
 from app.core.constants import TRUST_TIER_THRESHOLDS, VOUCH_CONFIG
+from app.core.security import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/v1/trust", tags=["Trust Score"])
-
 
 @router.get("/{user_id}")
 async def get_trust_score(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Get current trust score with breakdown and tier info."""
+    """Get current trust score."""
+    if str(user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Calculate distance to next tier
     next_tier = None
     points_needed = None
     for tier, threshold in sorted(TRUST_TIER_THRESHOLDS.items(), key=lambda x: x[1]):
@@ -56,14 +57,17 @@ async def get_trust_score(
         "vouch_costs": VOUCH_CONFIG,
     }
 
-
 @router.get("/{user_id}/history")
 async def get_trust_history(
     user_id: uuid.UUID,
     days: int = 30,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Get trust score history for dashboard charts."""
+    """Get trust score history."""
+    if str(user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -75,40 +79,36 @@ async def get_trust_history(
         "history": history,
     }
 
-
 @router.post("/{user_id}/vouch")
 async def create_vouch(
     user_id: uuid.UUID,
     vouch_type: str,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """
-    Redeem a vouch by spending trust credits.
-    Requires The Flex tier or higher.
+    """Redeem a vouch."""
+    if str(user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
 
-    vouch_type: "curfew_extension" | "social_pass" | "reduced_monitoring"
-    """
     valid_types = ["curfew_extension", "social_pass", "reduced_monitoring"]
     if vouch_type not in valid_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid vouch type. Must be one of: {valid_types}"
-        )
+        raise HTTPException(status_code=400, detail=f"Invalid vouch type")
 
     result = await redeem_vouch(user_id, vouch_type, db)
-
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["error"])
-
     return result
-
 
 @router.get("/{user_id}/vouches")
 async def list_vouches(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """List all vouches for a user (active + expired)."""
+    """List vouches."""
+    if str(user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
     result = await db.execute(
         select(Vouch)
         .where(Vouch.user_id == user_id)
@@ -116,7 +116,6 @@ async def list_vouches(
         .limit(20)
     )
     vouches = result.scalars().all()
-
     return {
         "user_id": str(user_id),
         "vouches": [
@@ -132,17 +131,16 @@ async def list_vouches(
         ]
     }
 
-
 @router.post("/decay")
-async def trigger_decay(db: AsyncSession = Depends(get_db)):
-    """Admin endpoint: manually trigger credit decay for silent users."""
-    # Also expire old vouches
+async def trigger_decay(
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(require_admin),
+):
+    """Admin: manually trigger credit decay."""
     expired_count = await expire_vouches(db)
     affected = await apply_credit_decay(db)
-
     return {
         "vouches_expired": expired_count,
         "users_decayed": len(affected),
         "details": affected,
     }
-

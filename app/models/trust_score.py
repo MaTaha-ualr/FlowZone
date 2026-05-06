@@ -45,11 +45,14 @@ class TrustScore(Base):
     user = relationship("User", back_populates="trust_scores")
 
     def calculate(self):
-        """Apply the Shield Formula."""
-        numerator = (self.consistency_c * self.weight_w) + \
-                    self.honesty_bonus_h + \
-                    self.regulation_bonus_r + \
-                    self.mentor_vouch_m - \
-                    self.penalty_p
-        self.total_score = numerator / max(self.time_t, 1)  # Prevent division by zero
+        """Apply the Shield Formula. time_t is retained as metadata only."""
+        consistency = self.consistency_c or 0
+        weight = self.weight_w if self.weight_w is not None else 1.0
+        honesty = self.honesty_bonus_h or 0.0
+        regulation = self.regulation_bonus_r or 0.0
+        mentor = self.mentor_vouch_m or 0.0
+        penalty = self.penalty_p or 0.0
+
+        numerator = (consistency * weight) + honesty + regulation + mentor - penalty
+        self.total_score = numerator
         return self.total_score

@@ -1,20 +1,15 @@
 """
-Session Routes
-================
-POST   /api/v1/sessions/{user_id}        — Start or resume a session
-GET    /api/v1/sessions/{user_id}         — List user's sessions
-GET    /api/v1/sessions/{user_id}/current — Get active session
-PUT    /api/v1/sessions/{session_id}/end  — End a session
-
-Session Logic:
-    - If user has an active session from today, resume it
-    - If last session is older than SESSION_TIMEOUT_HOURS, start new one
-    - Sessions track character, vibe, Safe Harbor level, and conversation summary
+Session Routes (FIXED)
+=======================
+Changes:
+  - Pagination on list_sessions
+  - Auth required
+  - User can only access their own sessions
 """
 
 import uuid
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from app.database import get_db
@@ -24,42 +19,42 @@ from app.schemas.api import SessionResponse
 from app.core.config import settings
 from app.core.safe_harbor import determine_floor
 from app.middleware.rate_limit import concurrency_guard
+from app.core.security import get_current_user
 
 router = APIRouter(prefix="/api/v1/sessions", tags=["Sessions"])
-
 
 @router.post("/{user_id}", response_model=SessionResponse, status_code=201)
 async def start_or_resume_session(
     user_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """
-    Start a new session or resume the current one.
-    Enforces the concurrency limit (MAX_CONCURRENT_USERS).
-    """
+    """Start or resume a session. Users can only start their own."""
+    if str(user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
     user = await db.get(User, user_id)
     if not user or not user.is_active:
         raise HTTPException(status_code=404, detail="User not found")
     if not user.intake_completed:
         raise HTTPException(
             status_code=400,
-            detail="Complete the Strategic Intake first (POST /api/v1/users/{id}/intake)"
+            detail="Complete the Strategic Intake first"
         )
 
-    # ---- Concurrency Check ----
+    # Concurrency Check
     allowed = await concurrency_guard.check_in(str(user_id))
     if not allowed:
         raise HTTPException(
             status_code=503,
             detail={
                 "error": "System at capacity",
-                "message": f"FlowZone supports {settings.max_concurrent_users} "
-                           f"concurrent users. Try again in a few minutes.",
+                "message": f"FlowZone supports {settings.max_concurrent_users} concurrent users.",
                 "active_users": concurrency_guard.active_count,
             }
         )
 
-    # ---- Check for Existing Active Session ----
+    # Check existing active session
     now = datetime.utcnow()
     timeout_threshold = now - timedelta(hours=settings.session_timeout_hours)
 
@@ -73,30 +68,24 @@ async def start_or_resume_session(
         ).order_by(Session.started_at.desc()).limit(1)
     )
     existing_session = result.scalar_one_or_none()
-
     if existing_session:
-        # Resume existing session
         return existing_session
 
-    # ---- Close Any Stale Active Sessions ----
+    # Close stale sessions
     stale_result = await db.execute(
         select(Session).where(
-            and_(
-                Session.user_id == user_id,
-                Session.is_active == True,
-            )
+            and_(Session.user_id == user_id, Session.is_active == True)
         )
     )
     for stale in stale_result.scalars().all():
         stale.is_active = False
         stale.ended_at = now
 
-    # ---- Create New Session ----
+    # Create new session
     safe_harbor_floor = determine_floor(
         has_trauma_history=user.has_trauma_history,
         has_crisis_history=user.has_crisis_history,
     )
-
     session = Session(
         user_id=user_id,
         session_type="flowquest",
@@ -106,57 +95,62 @@ async def start_or_resume_session(
     db.add(session)
     await db.flush()
     await db.refresh(session)
+    await db.commit()
     return session
-
 
 @router.get("/{user_id}", response_model=list[SessionResponse])
 async def list_sessions(
     user_id: uuid.UUID,
-    limit: int = 20,
-    db: AsyncSession = Depends(get_db)
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """List a user's recent sessions."""
+    """List a user's recent sessions with pagination."""
+    if str(user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
     result = await db.execute(
         select(Session)
         .where(Session.user_id == user_id)
         .order_by(Session.started_at.desc())
+        .offset(offset)
         .limit(limit)
     )
     return result.scalars().all()
 
-
 @router.get("/{user_id}/current", response_model=SessionResponse)
 async def get_current_session(
     user_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Get the user's currently active session, if any."""
+    """Get the user's currently active session."""
+    if str(user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
     result = await db.execute(
         select(Session).where(
-            and_(
-                Session.user_id == user_id,
-                Session.is_active == True,
-            )
+            and_(Session.user_id == user_id, Session.is_active == True)
         ).order_by(Session.started_at.desc()).limit(1)
     )
     session = result.scalar_one_or_none()
     if not session:
-        raise HTTPException(
-            status_code=404,
-            detail="No active session. Start one with POST /api/v1/sessions/{user_id}"
-        )
+        raise HTTPException(status_code=404, detail="No active session")
     return session
-
 
 @router.put("/{session_id}/end", response_model=SessionResponse)
 async def end_session(
     session_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """End an active session and release the concurrency slot."""
+    """End an active session."""
     session = await db.get(Session, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    if str(session.user_id) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
     if not session.is_active:
         raise HTTPException(status_code=400, detail="Session already ended")
 
@@ -167,9 +161,7 @@ async def end_session(
         delta = now - session.started_at
         session.duration_minutes = int(delta.total_seconds() / 60)
 
-    # Release concurrency slot
     await concurrency_guard.release(str(session.user_id))
-
     await db.flush()
-    await db.refresh(session)
+    await db.commit()
     return session

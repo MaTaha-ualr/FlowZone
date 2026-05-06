@@ -13,12 +13,13 @@ async def reset():
 
 async def _make_user(client):
     c = await client.post("/api/v1/users", json={"name": "Mentor Test", "age": 15, "user_type": "juvenile_justice"})
-    return c.json()["id"]
+    uid = c.json()["id"]
+    return uid, {"X-User-ID": uid}
 
 
 @pytest.mark.asyncio
 async def test_submit_note(client):
-    uid = await _make_user(client)
+    uid, _ = await _make_user(client)
     with patch("app.api.routes.mentors.sanitize_mentor_note", new_callable=AsyncMock) as m:
         m.return_value = "Sanitized content."
         r = await client.post("/api/v1/mentors/notes", json={
@@ -32,7 +33,7 @@ async def test_submit_note(client):
 
 @pytest.mark.asyncio
 async def test_submit_vouch(client):
-    uid = await _make_user(client)
+    uid, _ = await _make_user(client)
     with patch("app.api.routes.mentors.sanitize_mentor_note", new_callable=AsyncMock) as m:
         m.return_value = "Vouch."
         r = await client.post("/api/v1/mentors/notes", json={
@@ -45,22 +46,22 @@ async def test_submit_vouch(client):
 
 @pytest.mark.asyncio
 async def test_get_notes(client):
-    uid = await _make_user(client)
+    uid, headers = await _make_user(client)
     with patch("app.api.routes.mentors.sanitize_mentor_note", new_callable=AsyncMock) as m:
         m.return_value = "Clean."
         await client.post("/api/v1/mentors/notes", json={
             "user_id": uid, "mentor_id": "m1", "mentor_name": "Coach",
             "note_type": "observation", "content": "Raw.",
         })
-    r = await client.get(f"/api/v1/mentors/notes/{uid}")
+    r = await client.get(f"/api/v1/mentors/notes/{uid}", headers=headers)
     assert r.status_code == 200
     assert len(r.json()) >= 1
 
 
 @pytest.mark.asyncio
 async def test_dashboard(client):
-    uid = await _make_user(client)
-    r = await client.get(f"/api/v1/mentors/dashboard/{uid}")
+    uid, headers = await _make_user(client)
+    r = await client.get(f"/api/v1/mentors/dashboard/{uid}", headers=headers)
     assert r.status_code == 200
     assert "user" in r.json()
     assert "trust_score_trend" in r.json()
@@ -79,7 +80,7 @@ async def test_note_nonexistent_user(client):
 
 @pytest.mark.asyncio
 async def test_risk_flag_red(client):
-    uid = await _make_user(client)
+    uid, _ = await _make_user(client)
     with patch("app.api.routes.mentors.sanitize_mentor_note", new_callable=AsyncMock) as m:
         m.return_value = "Flagged."
         r = await client.post("/api/v1/mentors/notes", json={

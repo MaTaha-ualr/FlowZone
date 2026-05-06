@@ -1,33 +1,17 @@
 """
-Trust Score Calculator
-========================
-Implements the Shield Formula live recalculation after every session.
-
-Trust Score = ((C × W) + H + R + M - P) / T
-
-Where:
-    C = Consistency (consecutive check-in days)
-    W = Weight multiplier (1.5x on hard days — angry/storm vibe)
-    H = Honesty Bonus (+25 per proactive trap disclosure)
-    R = Regulation Bonus (+10 per completed tactical reset)
-    M = Mentor Vouch (manual points from mentors)
-    P = Penalty (-10 per mask, -25 per detected lie)
-    T = Time (days since first check-in — denominator normalizes over time)
-
-This service is called:
-    1. After every FlowQuest session (update C, W, H, R, P)
-    2. After mentor vouch submission (update M)
-    3. On a daily cron (apply credit decay for silent users)
-    4. After vouch redemption (deduct credits)
-
-Architecture Note:
-    Trust scores are CUMULATIVE across the user's lifetime, not per-session.
-    The daily snapshot in trust_scores table captures the state at end of day.
-    The user.current_trust_score is the running total, updated in real-time.
+Trust Score Calculator (FIXED)
+===============================
+Changes from original:
+  - Removed T (days_active) from daily contribution denominator.
+    The time factor was incorrectly penalizing loyal users.
+  - Added normalized_display_score for soft tenure-based dampening
+    (cosmetic only — tier thresholds use raw cumulative score).
+  - Fixed streak logic to handle timezone-aware datetimes correctly.
+  - Added explicit transaction safety (db.flush() only, caller commits).
 """
 
 import logging
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -47,9 +31,15 @@ from app.core.constants import (
 logger = logging.getLogger(__name__)
 
 
-# ============================================================
+def _as_naive_utc(value: datetime) -> datetime:
+    """Normalize any aware datetimes before comparing with DB-naive UTC values."""
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+# ------------------------------------------------------------------
 # MAIN: Recalculate after a session
-# ============================================================
+# ------------------------------------------------------------------
 
 async def recalculate_after_session(
     user_id: UUID,
@@ -57,18 +47,18 @@ async def recalculate_after_session(
     db: AsyncSession,
 ) -> dict:
     """
-    Recalculate the trust score after a FlowQuest session completes.
-    Updates both the daily TrustScore snapshot and the user's running total.
+    Recalculate the trust score after a FlowQuest session.
 
-    Returns:
-        {
-            "previous_score": float,
-            "new_score": float,
-            "delta": float,
-            "components": {...},
-            "tier_change": bool,
-            "new_tier": str,
-        }
+    FIXED FORMULA:
+      daily_contribution = (C × W) + H + R + M - P
+      user.current_trust_score += daily_contribution
+
+    The old formula divided by T (days_active), which incorrectly
+    shrunk daily contributions for long-tenure users.
+    T is now stored as metadata only.
+
+    A soft display normalization is available for UI cosmetics:
+      display_score = raw_score / (1 + 0.002 * days_active)
     """
     user = await db.get(User, user_id)
     if not user:
@@ -78,20 +68,20 @@ async def recalculate_after_session(
     today = date.today()
     weights = TRUST_SCORE_WEIGHTS
 
-    # ---- 1. Consistency (C): Update check-in streak ----
+    # 1. Consistency (C): Update check-in streak
     streak = await _update_streak(user, db)
 
-    # ---- 2. Weight (W): Hard day multiplier ----
+    # 2. Weight (W): Hard day multiplier
     vibe = session.vibe_selected
     if vibe in (Vibe.ANGRY, Vibe.STORM):
         weight = weights["weight_hard_day"]  # 1.5x
     else:
         weight = weights["weight_normal_day"]  # 1.0x
 
-    # ---- 3. Honesty Bonus (H) ----
-    honesty_points = session.honesty_disclosures * weights["honesty_bonus"]
+    # 3. Honesty Bonus (H)
+    honesty_points = (session.honesty_disclosures or 0) * weights["honesty_bonus"]
 
-    # ---- 4. Regulation Bonus (R) ----
+    # 4. Regulation Bonus (R)
     completed = session.interventions_completed or []
     regulation_count = sum(
         1 for i in completed
@@ -99,7 +89,7 @@ async def recalculate_after_session(
     )
     regulation_points = regulation_count * weights["regulation_bonus"]
 
-    # ---- 5. Mentor Vouch (M): Sum of today's vouch points ----
+    # 5. Mentor Vouch (M): Sum of today's vouch points
     vouch_result = await db.execute(
         select(func.coalesce(func.sum(MentorNote.vouch_points), 0))
         .where(and_(
@@ -110,23 +100,23 @@ async def recalculate_after_session(
     )
     mentor_points = float(vouch_result.scalar())
 
-    # ---- 6. Penalty (P): Mask detection penalty ----
+    # 6. Penalty (P)
     penalty = 0.0
     if session.mask_detected:
         penalty = abs(weights["mask_penalty"])  # -10
 
-    # ---- 7. Time (T): Days since first check-in ----
+    # 7. Time (T): Days since first check-in — METADATA ONLY
     first_session_result = await db.execute(
         select(func.min(Session.started_at))
         .where(Session.user_id == user_id)
     )
     first_session_date = first_session_result.scalar()
     if first_session_date:
-        days_active = max(1, (datetime.utcnow() - first_session_date).days)
+        days_active = max(1, (datetime.utcnow() - _as_naive_utc(first_session_date)).days)
     else:
         days_active = 1
 
-    # ---- Calculate daily contribution ----
+    # ---- Calculate daily contribution (FIXED: no division by T) ----
     daily_contribution = (streak * weight) + honesty_points + regulation_points + mentor_points - penalty
 
     # ---- Update or create today's trust score snapshot ----
@@ -139,7 +129,6 @@ async def recalculate_after_session(
     score_record = existing.scalar_one_or_none()
 
     if score_record:
-        # Update existing daily record (accumulate within the day)
         score_record.consistency_c = streak
         score_record.weight_w = weight
         score_record.honesty_bonus_h += honesty_points
@@ -149,7 +138,6 @@ async def recalculate_after_session(
         score_record.time_t = days_active
         score_record.calculate()
     else:
-        # Create new daily record
         score_record = TrustScore(
             user_id=user_id,
             score_date=today,
@@ -164,10 +152,12 @@ async def recalculate_after_session(
         score_record.calculate()
         db.add(score_record)
 
-    # ---- Update user's running total ----
-    # Running total accumulates all daily contributions
+    # ---- Update user's running total (cumulative, never divided by T) ----
     user.current_trust_score = previous_score + daily_contribution
-    user.current_trust_score = max(0, user.current_trust_score)  # Never go negative
+    user.current_trust_score = max(0.0, user.current_trust_score)
+
+    # Soft display normalization (cosmetic — does NOT affect tiers)
+    display_score = user.current_trust_score / (1.0 + 0.002 * days_active)
 
     # ---- Check for tier promotion ----
     old_tier = user.current_tier
@@ -183,6 +173,7 @@ async def recalculate_after_session(
     result = {
         "previous_score": previous_score,
         "new_score": user.current_trust_score,
+        "display_score": round(display_score, 1),
         "delta": daily_contribution,
         "components": {
             "consistency": streak,
@@ -204,51 +195,43 @@ async def recalculate_after_session(
     logger.info(
         f"Trust score updated for {user.name}: "
         f"{previous_score:.1f} → {user.current_trust_score:.1f} "
-        f"(delta: {daily_contribution:+.1f})"
+        f"(delta: {daily_contribution:+.1f}, display: {display_score:.1f})"
     )
 
     return result
 
-
-# ============================================================
-# STREAK MANAGEMENT
-# ============================================================
+# ------------------------------------------------------------------
+# STREAK MANAGEMENT (FIXED timezone handling)
+# ------------------------------------------------------------------
 
 async def _update_streak(user: User, db: AsyncSession) -> int:
     """
     Update the user's consecutive check-in streak.
-    A streak continues if the user checked in yesterday or today.
-    A streak resets if they missed a day.
     """
     today = date.today()
     last_checkin = user.last_check_in
 
     if last_checkin is None:
-        # First ever check-in
         user.check_in_streak = 1
         user.last_check_in = datetime.utcnow()
         return 1
 
-    last_date = last_checkin.date() if hasattr(last_checkin, 'date') else last_checkin
+    last_date = _as_naive_utc(last_checkin).date()
     days_gap = (today - last_date).days
 
     if days_gap == 0:
-        # Already checked in today — streak stays the same
-        pass
+        pass  # Already checked in today
     elif days_gap == 1:
-        # Consecutive day — streak increases
         user.check_in_streak += 1
     else:
-        # Missed one or more days — streak resets
         user.check_in_streak = 1
 
     user.last_check_in = datetime.utcnow()
     return user.check_in_streak
 
-
-# ============================================================
+# ------------------------------------------------------------------
 # TIER CALCULATION
-# ============================================================
+# ------------------------------------------------------------------
 
 def _calculate_tier(total_score: float) -> TrustTier:
     """Determine trust tier based on cumulative score."""
@@ -258,18 +241,14 @@ def _calculate_tier(total_score: float) -> TrustTier:
             current_tier = tier
     return current_tier
 
-
-# ============================================================
+# ------------------------------------------------------------------
 # CREDIT DECAY (for silent users)
-# ============================================================
+# ------------------------------------------------------------------
 
 async def apply_credit_decay(db: AsyncSession) -> list[dict]:
     """
     Apply credit decay for users who haven't checked in for 72+ hours.
-    Decay rate: -5% per day after the threshold.
-
-    Should be called daily via a cron job or background task.
-    Returns list of affected users.
+    Should be called daily via cron or background task.
     """
     threshold = datetime.utcnow() - timedelta(
         hours=TRUST_SCORE_WEIGHTS["decay_threshold_hours"]
@@ -289,12 +268,10 @@ async def apply_credit_decay(db: AsyncSession) -> list[dict]:
     for user in silent_users:
         old_score = user.current_trust_score
         decay_amount = old_score * decay_rate
-        user.current_trust_score = max(0, old_score - decay_amount)
-
-        # Recalculate tier
+        user.current_trust_score = max(0.0, old_score - decay_amount)
         user.current_tier = _calculate_tier(user.current_trust_score)
 
-        days_silent = (datetime.utcnow() - user.last_check_in).days
+        days_silent = (datetime.utcnow() - _as_naive_utc(user.last_check_in)).days
 
         affected.append({
             "user_id": str(user.id),
@@ -313,37 +290,28 @@ async def apply_credit_decay(db: AsyncSession) -> list[dict]:
     await db.flush()
     return affected
 
-
-# ============================================================
+# ------------------------------------------------------------------
 # VOUCH ECONOMY
-# ============================================================
+# ------------------------------------------------------------------
 
 async def redeem_vouch(
     user_id: UUID,
     vouch_type: str,
     db: AsyncSession,
 ) -> dict:
-    """
-    User spends trust credits to generate a vouch (curfew extension, etc.).
-    Vouches expire in 48 hours.
-
-    Returns:
-        {"success": bool, "vouch_id": str, "credits_spent": float, ...}
-    """
+    """Redeem a vouch by spending trust credits."""
     user = await db.get(User, user_id)
     if not user:
         return {"success": False, "error": "User not found"}
 
-    # Check tier — must be at least THE_FLEX
     if user.current_tier == TrustTier.THE_WATCH:
         return {
             "success": False,
             "error": "You need to reach The Flex tier to redeem vouches. "
-                     f"Current score: {user.current_trust_score:.0f}, "
-                     f"needed: {TRUST_TIER_THRESHOLDS[TrustTier.THE_FLEX]}"
+            f"Current score: {user.current_trust_score:.0f}, "
+            f"needed: {TRUST_TIER_THRESHOLDS[TrustTier.THE_FLEX]}"
         }
 
-    # Get cost
     cost_map = {
         "curfew_extension": VOUCH_CONFIG["curfew_extension_cost"],
         "social_pass": VOUCH_CONFIG["social_pass_cost"],
@@ -353,14 +321,12 @@ async def redeem_vouch(
     if cost is None:
         return {"success": False, "error": f"Unknown vouch type: {vouch_type}"}
 
-    # Check balance
     if user.current_trust_score < cost:
         return {
             "success": False,
             "error": f"Not enough credits. Need {cost}, have {user.current_trust_score:.0f}"
         }
 
-    # Create vouch
     expires_at = datetime.utcnow() + timedelta(hours=VOUCH_CONFIG["expiry_hours"])
     vouch = Vouch(
         user_id=user_id,
@@ -370,7 +336,6 @@ async def redeem_vouch(
     )
     db.add(vouch)
 
-    # Deduct credits
     user.current_trust_score -= cost
     user.current_tier = _calculate_tier(user.current_trust_score)
 
@@ -391,12 +356,8 @@ async def redeem_vouch(
         "expires_at": expires_at.isoformat(),
     }
 
-
 async def expire_vouches(db: AsyncSession) -> int:
-    """
-    Expire vouches past their 48-hour window.
-    Should run via cron or background task.
-    """
+    """Expire vouches past their 48-hour window."""
     now = datetime.utcnow()
     result = await db.execute(
         select(Vouch).where(and_(
@@ -416,17 +377,16 @@ async def expire_vouches(db: AsyncSession) -> int:
 
     return len(expired)
 
-
-# ============================================================
+# ------------------------------------------------------------------
 # SCORE HISTORY
-# ============================================================
+# ------------------------------------------------------------------
 
 async def get_score_history(
     user_id: UUID,
     db: AsyncSession,
     days: int = 30,
 ) -> list[dict]:
-    """Get trust score history for a user (for charts/dashboard)."""
+    """Get trust score history for charts/dashboard."""
     result = await db.execute(
         select(TrustScore)
         .where(TrustScore.user_id == user_id)
@@ -448,4 +408,3 @@ async def get_score_history(
         }
         for s in reversed(scores)
     ]
-
