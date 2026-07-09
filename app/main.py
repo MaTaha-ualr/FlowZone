@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.core.config import settings
+from app.core.config import settings, validate_runtime_security_settings
 from app.core.logging_config import setup_logging
 from app.database import init_db, close_db
 from app.middleware.rate_limit import RateLimitMiddleware
@@ -40,6 +40,8 @@ from app.api.routes.profile import router as profile_router
 from app.api.routes.vibe import router as vibe_router
 from app.api.routes.admin import router as admin_router
 from app.api.routes.ws import router as ws_router
+from app.api.routes.safety import router as safety_router
+from app.api.routes.checkins import router as checkins_router
 
 # Setup structured logging immediately
 setup_logging(level=logging.DEBUG if settings.app_debug else logging.INFO)
@@ -64,6 +66,9 @@ async def lifespan(app: FastAPI):
         "demo_mode": settings.app_demo_mode,
         "frontend_url": settings.app_frontend_url,
     })
+    validate_runtime_security_settings()
+    if settings.app_demo_mode:
+        logger.warning("Demo auth mode is enabled; do not use this for production traffic.")
 
     # Import all models so Base.metadata knows about them
     import app.models  # noqa: F401
@@ -134,6 +139,8 @@ app.include_router(trust_router)
 app.include_router(profile_router)
 app.include_router(vibe_router)
 app.include_router(admin_router)
+app.include_router(safety_router)
+app.include_router(checkins_router)
 app.include_router(ws_router)  # NEW: WebSocket
 
 # ---- Frontend static app ----
@@ -147,7 +154,7 @@ if (FRONTEND_DIST / "assets").is_dir():
 @app.get("/", include_in_schema=False)
 async def root():
     """Serve the frontend when built; otherwise expose API metadata."""
-    if FRONTEND_INDEX.is_file():
+    if settings.app_env.value in {"staging", "production"} and FRONTEND_INDEX.is_file():
         return FileResponse(FRONTEND_INDEX)
     return {
         "service": "FlowZone API",

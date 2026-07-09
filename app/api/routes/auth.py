@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Environment, settings
 from app.core.constants import Character, SafeHarborLevel, TrustTier
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.database import get_db
@@ -39,6 +40,12 @@ async def register(
     db: AsyncSession = Depends(get_db),
 ):
     """Create an account and return a bearer token for the frontend app."""
+    if data.role.value == "admin" and settings.app_env != Environment.DEVELOPMENT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin accounts cannot be self-registered.",
+        )
+
     username = _normalize_username(data.username)
     email = _normalize_optional(data.email)
     phone = _normalize_optional(data.phone)

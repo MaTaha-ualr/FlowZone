@@ -249,7 +249,10 @@ async def force_new_session(
             },
         )
 
-    floor = determine_floor(user)
+    floor = determine_floor(
+        has_trauma_history=user.has_trauma_history,
+        has_crisis_history=user.has_crisis_history,
+    )
     new_session = Session(
         user_id=user_id,
         character_active=user.current_character,

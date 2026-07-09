@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     app_demo_mode: bool = False  # NEW: bypass auth for pilot testing
+    app_demo_secret: Optional[str] = None
     app_frontend_url: str = "http://localhost:3000"  # NEW: for CORS + redirects
 
     # ---- CORS ----
@@ -92,6 +93,18 @@ class Settings(BaseSettings):
     # ---- Rate Limiting ----
     user_rate_limit_per_minute: int = 10
 
+    # ---- Documents ----
+    document_max_upload_bytes: int = 10 * 1024 * 1024
+    document_allowed_mime_types: str = (
+        "application/pdf,"
+        "text/plain,"
+        "application/msword,"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+        "image/png,"
+        "image/jpeg,"
+        "image/webp"
+    )
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
@@ -113,6 +126,28 @@ class Settings(BaseSettings):
         if self.cors_origins == "*":
             return ["*"]
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def document_allowed_mime_types_set(self) -> set[str]:
+        return {
+            item.strip().lower()
+            for item in self.document_allowed_mime_types.split(",")
+            if item.strip()
+        }
+
+
+def validate_runtime_security_settings() -> None:
+    """Fail fast for unsafe production configuration."""
+    if settings.app_env == Environment.PRODUCTION:
+        failures = []
+        if settings.app_demo_mode:
+            failures.append("APP_DEMO_MODE must be false in production.")
+        if settings.app_secret_key == "change-me-in-production":
+            failures.append("APP_SECRET_KEY must be set to a production secret.")
+        if settings.cors_origins == "*":
+            failures.append("CORS_ORIGINS must list explicit origins in production.")
+        if failures:
+            raise RuntimeError("Unsafe production configuration: " + " ".join(failures))
 
 # Singleton
 settings = Settings()

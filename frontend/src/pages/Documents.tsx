@@ -299,9 +299,10 @@ export default function Documents() {
 
   // Revoke blob URLs on unmount
   useEffect(() => {
+    const localPreviews = localPreviewsRef.current
     return () => {
-      localPreviewsRef.current.forEach((v) => URL.revokeObjectURL(v.url))
-      localPreviewsRef.current.clear()
+      localPreviews.forEach((v) => URL.revokeObjectURL(v.url))
+      localPreviews.clear()
     }
   }, [])
 

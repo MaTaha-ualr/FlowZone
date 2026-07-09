@@ -19,7 +19,7 @@ from app.database import Base, get_db
 from app.main import app
 from app.models import (
     User, Session, Message, TrustScore, MentorNote,
-    SchoolData, DocumentRef, ApiUsage, Vouch, Pattern,
+    SchoolData, DocumentRef, ApiUsage, Vouch, Pattern, SafetyEvent,
 )
 from app.core.constants import Character, Vibe, SafeHarborLevel, TrustTier
 from app.core.config import settings

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Menu,
@@ -15,6 +15,12 @@ import {
   FileText,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { GetHelpButton } from "@/components/CrisisSupport";
+
+/** True when `pathname` is `to` or a nested route under it. */
+function isActive(pathname: string, to: string): boolean {
+  return pathname === to || pathname.startsWith(to + "/");
+}
 
 const youthLinks = [
   { to: "/dashboard", label: "Dashboard", icon: BarChart3 },
@@ -37,6 +43,16 @@ export default function Navbar() {
 
   const links = role === "mentor" ? mentorLinks : youthLinks;
 
+  // Close the mobile menu on Escape for keyboard users.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen]);
+
   return (
     <nav className="sticky top-0 z-50 bg-bgElevated/90 backdrop-blur-md border-b border-borderSubtle">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -55,8 +71,9 @@ export default function Navbar() {
                 <Link
                   key={l.to}
                   to={l.to}
+                  aria-current={isActive(location.pathname, l.to) ? "page" : undefined}
                   className={`flex items-center gap-1.5 px-3 py-2 rounded-fz-md text-sm font-medium transition-colors ${
-                    location.pathname === l.to || location.pathname.startsWith(l.to + "/")
+                    isActive(location.pathname, l.to)
                       ? "text-brandGold bg-brandGold/10"
                       : "text-textSecondary hover:text-textPrimary hover:bg-bgHover"
                   }`}
@@ -69,6 +86,9 @@ export default function Navbar() {
 
           {/* Right side */}
           <div className="flex items-center gap-3">
+            {/* Crisis help is always reachable. */}
+            {isAuthenticated && <GetHelpButton />}
+
             {isAuthenticated && user && (
               <>
                 <div className="hidden sm:flex items-center gap-2">
@@ -110,9 +130,12 @@ export default function Navbar() {
             {/* Mobile hamburger */}
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
+              aria-label={mobileOpen ? "Close menu" : "Open menu"}
+              aria-expanded={mobileOpen}
+              aria-controls="mobile-menu"
               className="md:hidden p-2 text-textPrimary"
             >
-              {mobileOpen ? <X size={22} /> : <Menu size={22} />}
+              {mobileOpen ? <X size={22} aria-hidden="true" /> : <Menu size={22} aria-hidden="true" />}
             </button>
           </div>
         </div>
@@ -122,6 +145,7 @@ export default function Navbar() {
       <AnimatePresence>
         {mobileOpen && (
           <motion.div
+            id="mobile-menu"
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -135,8 +159,9 @@ export default function Navbar() {
                       key={l.to}
                       to={l.to}
                       onClick={() => setMobileOpen(false)}
+                      aria-current={isActive(location.pathname, l.to) ? "page" : undefined}
                       className={`flex items-center gap-2 px-3 py-2 rounded-fz-md text-sm ${
-                        location.pathname === l.to
+                        isActive(location.pathname, l.to)
                           ? "text-brandGold bg-brandGold/10"
                           : "text-textSecondary"
                       }`}
@@ -145,6 +170,9 @@ export default function Navbar() {
                       {l.label}
                     </Link>
                   ))}
+                  <div className="px-3 py-2">
+                    <GetHelpButton variant="block" className="w-full" />
+                  </div>
                   <button
                     onClick={() => {
                       setMobileOpen(false);
@@ -152,7 +180,7 @@ export default function Navbar() {
                     }}
                     className="flex w-full items-center gap-2 px-3 py-2 text-sm text-safeRed"
                   >
-                    <LogOut size={16} />
+                    <LogOut size={16} aria-hidden="true" />
                     Exit
                   </button>
                 </>

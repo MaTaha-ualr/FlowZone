@@ -16,6 +16,7 @@ import {
   MessageSquare,
   Hash,
   Flame,
+  RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -278,6 +279,7 @@ export default function FlowQuest() {
   const [recordingTime, setRecordingTime] = useState(0)
   const [hasStarted, setHasStarted] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
+  const [startupError, setStartupError] = useState('')
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -285,7 +287,25 @@ export default function FlowQuest() {
   const streamingMessageIdRef = useRef<string | null>(null)
   const initialMessageSentRef = useRef(false)
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Refs that mirror volatile state so the socket lifecycle effect can key on
+  // `sessionId` alone. Reading these avoids recreating the socket every time a
+  // message arrives or the connection status flips (the P0.4 reconnect churn).
+  const messagesLenRef = useRef(0)
+  const wsStatusRef = useRef(wsStatus)
+  const sessionCharacterRef = useRef(session.character)
   const character = CHARACTER_MAP[characterKey(session.character)] || CHARACTER_MAP.vex
+
+  useEffect(() => {
+    messagesLenRef.current = messages.length
+  }, [messages.length])
+
+  useEffect(() => {
+    wsStatusRef.current = wsStatus
+  }, [wsStatus])
+
+  useEffect(() => {
+    sessionCharacterRef.current = session.character
+  }, [session.character])
 
   useEffect(() => {
     setSessionId(requestedSessionId)
@@ -300,6 +320,7 @@ export default function FlowQuest() {
         const createdSession = asRecord(created)
         const createdId = stringValue(createdSession.id)
         if (!createdId) throw new Error('Session id missing')
+        setStartupError('')
         setSessionId(createdId)
         setSession((current) => ({
           ...current,
@@ -312,8 +333,10 @@ export default function FlowQuest() {
         }))
         navigate(`/flowquest/${createdId}`, { replace: true })
       })
-      .catch(() => {
-        if (!cancelled) setSessionId('demo-session')
+      .catch((err) => {
+        if (!cancelled) {
+          setStartupError(err instanceof Error ? err.message : 'Could not start a FlowQuest session.')
+        }
       })
     return () => {
       cancelled = true
@@ -352,7 +375,7 @@ export default function FlowQuest() {
               role: 'assistant',
               content: data.content || '',
               timestamp: nowISO(),
-              character: session.character,
+              character: sessionCharacterRef.current,
             }]
           })
         } else if (data.type === 'done') {
@@ -415,36 +438,49 @@ export default function FlowQuest() {
       setWsStatus('disconnected')
     }
     ws.onerror = () => setWsStatus('disconnected')
-  }, [session.character, sessionId])
+  }, [sessionId])
 
-  // Fallback polling
+  // Fallback polling. Reads the latest message count from a ref so this
+  // callback stays stable and doesn't retrigger the socket lifecycle effect.
   const pollMessages = useCallback(async () => {
     if (!sessionId) return
     try {
       const history = await getChatHistory(sessionId)
-      if (history.length > messages.length) {
+      if (history.length > messagesLenRef.current) {
         setMessages(history)
       }
     } catch {
       // silent fail
     }
-  }, [sessionId, messages.length])
+  }, [sessionId])
 
+  // Manual reconnect for the disconnected state.
+  const reconnect = useCallback(() => {
+    wsRef.current?.close()
+    wsRef.current = null
+    setWsStatus('thinking')
+    connectWebSocket()
+    void pollMessages()
+  }, [connectWebSocket, pollMessages])
+
+  // Socket lifecycle: open once per session, and while disconnected try to
+  // recover on an interval. Keyed on `sessionId` only so incoming messages and
+  // status changes never tear the connection down.
   useEffect(() => {
     if (!sessionId) return
-    // Try WebSocket first, fall back to polling
     connectWebSocket()
     const pollInterval = setInterval(() => {
-      if (wsStatus === 'disconnected') {
-        pollMessages()
+      if (wsStatusRef.current === 'disconnected') {
+        void pollMessages()
         connectWebSocket()
       }
     }, 5000)
     return () => {
       clearInterval(pollInterval)
       wsRef.current?.close()
+      wsRef.current = null
     }
-  }, [connectWebSocket, pollMessages, sessionId, wsStatus])
+  }, [connectWebSocket, pollMessages, sessionId])
 
   // Initial history load
   useEffect(() => {
@@ -472,7 +508,12 @@ export default function FlowQuest() {
   }
 
   const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || !sessionId) return
+    if (!text.trim()) return
+    if (!sessionId) {
+      setStartupError('No active FlowQuest session. Try starting a new conversation.')
+      return
+    }
+    setStartupError('')
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
@@ -496,9 +537,15 @@ export default function FlowQuest() {
         setMessages((prev) => [...prev, response])
         setIsThinking(false)
         setWsStatus('connected')
-      } catch {
+      } catch (err) {
         setIsThinking(false)
         setWsStatus('disconnected')
+        setMessages((prev) => [...prev, {
+          id: crypto.randomUUID(),
+          role: 'system',
+          content: err instanceof Error ? err.message : 'AI response failed. Please retry.',
+          timestamp: nowISO(),
+        }])
       }
     }
   }, [session.vibe, sessionId])
@@ -524,12 +571,13 @@ export default function FlowQuest() {
     if (!user?.id) return
     try {
       const fresh = (await startNewSessionApi(user.id)) as { id: string }
+      setStartupError('')
       setMessages([])
       setHasStarted(false)
       setSessionId(fresh.id)
       navigate(`/flowquest/${fresh.id}`, { replace: true })
     } catch (err) {
-      console.warn('Could not start a new conversation', err)
+      setStartupError(err instanceof Error ? err.message : 'Could not start a new conversation.')
     }
   }
 
@@ -547,39 +595,15 @@ export default function FlowQuest() {
   }
 
   const startRecording = () => {
-    setRecording(true)
+    setRecording(false)
     setRecordingTime(0)
-    recordingTimerRef.current = setInterval(() => {
-      setRecordingTime((t) => t + 1)
-    }, 1000)
+    navigate('/voice')
   }
 
   const stopRecording = () => {
     setRecording(false)
     if (recordingTimerRef.current) clearInterval(recordingTimerRef.current)
-    // Simulate voice message
-    const duration = recordingTime
-    const voiceMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: `[Voice message — ${duration}s]`,
-      timestamp: nowISO(),
-      voice_url: '#',
-    }
-    setMessages((prev) => [...prev, voiceMsg])
-    setRecordingTime(0)
-    setIsThinking(true)
-    setTimeout(() => {
-      setIsThinking(false)
-      const reply: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: "I hear you. Keep talking — I'm listening.",
-        timestamp: nowISO(),
-        character: session.character,
-      }
-      setMessages((prev) => [...prev, reply])
-    }, 2000)
+    recordingTimerRef.current = null
   }
 
   const formatTime = (iso: string) => {
@@ -627,6 +651,16 @@ export default function FlowQuest() {
         </div>
 
         <div className="flex items-center gap-3">
+          {wsStatus === 'disconnected' && (
+            <button
+              onClick={reconnect}
+              className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-white/5"
+              style={{ color: '#F59E0B', borderColor: 'rgba(245,158,11,0.4)' }}
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+              Reconnect
+            </button>
+          )}
           <div
             className="px-2.5 py-1 rounded-full text-xs font-medium border"
             style={{ color: '#D4AF37', borderColor: 'rgba(212,175,55,0.3)', backgroundColor: 'rgba(212,175,55,0.08)' }}
@@ -636,10 +670,13 @@ export default function FlowQuest() {
           <div className="relative">
             <button
               onClick={() => setMenuOpen(!menuOpen)}
+              aria-label="Conversation options"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
               className="p-2 rounded-full transition-colors"
               style={{ color: '#A1A1AA' }}
             >
-              <MoreVertical className="w-5 h-5" />
+              <MoreVertical className="w-5 h-5" aria-hidden="true" />
             </button>
             <AnimatePresence>
               {menuOpen && (
@@ -693,10 +730,23 @@ export default function FlowQuest() {
         </div>
       </motion.header>
 
+      {startupError && (
+        <div className="shrink-0 border-b px-4 py-3 text-sm" style={{ backgroundColor: 'rgba(220,38,38,0.08)', borderColor: 'rgba(220,38,38,0.28)', color: '#FCA5A5' }}>
+          <div className="mx-auto flex max-w-3xl items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>{startupError}</span>
+          </div>
+        </div>
+      )}
+
       {/* ─── Message Area ─── */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
+        role="log"
+        aria-label="Conversation messages"
+        aria-live="polite"
+        aria-relevant="additions text"
         className="flex-1 overflow-y-auto px-4 py-6 space-y-4"
         style={{ backgroundColor: 'rgba(5,5,7,0.6)' }}
       >

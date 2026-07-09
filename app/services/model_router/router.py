@@ -120,7 +120,11 @@ class ModelRouter:
         # 2. Get the model chain for this character
         # Override budget behavior: always treat as GREEN (use best models first)
         model_chain = self._get_model_chain(character, BudgetTier.GREEN)
-        logger.info(f"Model chain: {[f'{m['provider'].value}/{m['model'].value}' for m in model_chain]}")
+        chain_labels = [
+            f"{entry['provider'].value}/{entry['model'].value}"
+            for entry in model_chain
+        ]
+        logger.info(f"Model chain: {chain_labels}")
 
         # 3. Try each model in the chain
         return await self._execute_with_fallback(

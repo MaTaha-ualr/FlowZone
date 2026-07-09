@@ -4,13 +4,13 @@ Mentor Routes
 Auth model:
   - Mentors (role='mentor') can view any youth's roster, dashboard, and notes.
   - Youth (role='youth') can only view their own dashboard and notes.
-  - Anyone authenticated can submit mentor notes (in practice the frontend
-    only exposes the form to mentors).
+  - Mentor notes require a mentor/admin account and derive mentor identity
+    from auth, not from request JSON.
 """
 
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
 
@@ -20,21 +20,23 @@ from app.models.session import Session as SessionModel
 from app.models.mentor_note import MentorNote
 from app.models.trust_score import TrustScore
 from app.models.school_data import SchoolData
+from app.models.safety_event import SafetyEvent
 from app.schemas.api import MentorNoteCreate, MentorNoteResponse
 from app.services.trust_engine.sanitization import sanitize_mentor_note
-from app.core.constants import CHARACTER_DISPLAY_NAMES, Character
-from app.core.security import get_current_user
+from app.core.constants import CHARACTER_DISPLAY_NAMES, Character, SafeHarborLevel
+from app.core.security import get_current_user, require_mentor_or_admin
+from app.api.routes.safety import create_safety_event
 
 router = APIRouter(prefix="/api/v1/mentors", tags=["Mentors"])
 
 
-def _is_mentor(user: User) -> bool:
-    return (user.role or "").lower() == "mentor"
+def _is_staff(user: User) -> bool:
+    return (user.role or "").lower() in {"mentor", "admin"}
 
 
 def _can_view_youth(viewer: User, youth_id: uuid.UUID) -> bool:
     """Mentors can view any youth; youth can only view themselves."""
-    if _is_mentor(viewer):
+    if _is_staff(viewer):
         return True
     return str(viewer.id) == str(youth_id)
 
@@ -51,7 +53,7 @@ def _character_display_name(character_value: str | None) -> str:
 async def submit_mentor_note(
     data: MentorNoteCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_mentor_or_admin),
 ):
     """Submit a mentor note."""
     user = await db.get(User, data.user_id)
@@ -60,8 +62,8 @@ async def submit_mentor_note(
 
     note = MentorNote(
         user_id=data.user_id,
-        mentor_id=data.mentor_id,
-        mentor_name=data.mentor_name,
+        mentor_id=str(current_user.id),
+        mentor_name=current_user.name,
         note_type=data.note_type,
         raw_content=data.content,
         vouch_points=data.vouch_points,
@@ -85,8 +87,27 @@ async def submit_mentor_note(
         user.current_trust_score += data.vouch_points
 
     if data.risk_flag_level == "red":
-        from app.core.constants import SafeHarborLevel
         user.safe_harbor_floor = SafeHarborLevel.RED
+        await create_safety_event(
+            db=db,
+            user_id=user.id,
+            session_id=None,
+            source="mentor_note",
+            severity="red",
+            trigger="risk_flag",
+            description=note.sanitized_content or data.content,
+        )
+    elif data.risk_flag_level == "yellow":
+        user.safe_harbor_floor = SafeHarborLevel.YELLOW
+        await create_safety_event(
+            db=db,
+            user_id=user.id,
+            session_id=None,
+            source="mentor_note",
+            severity="yellow",
+            trigger="risk_flag",
+            description=note.sanitized_content or data.content,
+        )
 
     await db.flush()
     await db.commit()
@@ -120,7 +141,7 @@ async def mentor_roster(
     Mentor-only. Each card carries enough state to render the roster grid
     without follow-up calls.
     """
-    if not _is_mentor(current_user):
+    if not _is_staff(current_user):
         raise HTTPException(status_code=403, detail="Mentor role required")
 
     # Pull every youth user.
@@ -225,6 +246,82 @@ async def mentor_roster(
         "avg_trust": round(trust_total / len(cards), 1) if cards else 0,
         "youth": cards,
     }
+
+
+@router.get("/alerts")
+async def mentor_alerts(
+    status_filter: str = Query("open", alias="status"),
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_mentor_or_admin),
+):
+    """Return unresolved safety events for mentor/case-worker review."""
+    query = (
+        select(SafetyEvent, User)
+        .join(User, User.id == SafetyEvent.user_id)
+        .where(SafetyEvent.severity.in_(["yellow", "red"]))
+        .order_by(desc(SafetyEvent.created_at))
+        .limit(max(1, min(limit, 100)))
+    )
+    if status_filter != "all":
+        query = query.where(SafetyEvent.status == status_filter)
+
+    result = await db.execute(query)
+    alerts = []
+    for event, youth in result.all():
+        alerts.append({
+            "id": str(event.id),
+            "user_id": str(event.user_id),
+            "youth_name": youth.name,
+            "session_id": str(event.session_id) if event.session_id else None,
+            "source": event.source,
+            "severity": event.severity,
+            "trigger": event.trigger,
+            "description": event.description,
+            "status": event.status,
+            "assigned_to": str(event.assigned_to) if event.assigned_to else None,
+            "acknowledged_by": str(event.acknowledged_by) if event.acknowledged_by else None,
+            "acknowledged_at": event.acknowledged_at.isoformat() if event.acknowledged_at else None,
+            "resolved_by": str(event.resolved_by) if event.resolved_by else None,
+            "resolved_at": event.resolved_at.isoformat() if event.resolved_at else None,
+            "created_at": event.created_at.isoformat() if event.created_at else None,
+        })
+    return alerts
+
+
+@router.post("/alerts/{event_id}/acknowledge")
+async def acknowledge_alert(
+    event_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_mentor_or_admin),
+):
+    event = await db.get(SafetyEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Safety event not found")
+    event.status = "acknowledged"
+    event.assigned_to = current_user.id
+    event.acknowledged_by = current_user.id
+    event.acknowledged_at = datetime.utcnow()
+    await db.flush()
+    await db.commit()
+    return {"status": "acknowledged", "event_id": str(event.id)}
+
+
+@router.post("/alerts/{event_id}/resolve")
+async def resolve_alert(
+    event_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_mentor_or_admin),
+):
+    event = await db.get(SafetyEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Safety event not found")
+    event.status = "resolved"
+    event.resolved_by = current_user.id
+    event.resolved_at = datetime.utcnow()
+    await db.flush()
+    await db.commit()
+    return {"status": "resolved", "event_id": str(event.id)}
 
 @router.get("/dashboard/{user_id}")
 async def mentor_dashboard(

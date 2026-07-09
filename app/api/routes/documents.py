@@ -7,7 +7,9 @@ Changes:
 """
 
 import uuid
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -23,10 +25,40 @@ from app.services.rag.google_drive import (
     exchange_code_for_tokens,
     GoogleDriveNotConfigured,
 )
+from app.core.config import settings
 from app.core.constants import Character
 from app.core.security import get_current_user
 
 router = APIRouter(prefix="/api/v1", tags=["Documents", "RAG"])
+
+ALLOWED_DOCUMENT_EXTENSIONS = {".pdf", ".txt", ".doc", ".docx", ".png", ".jpg", ".jpeg", ".webp"}
+
+
+async def _read_validated_upload(file: UploadFile) -> bytes:
+    filename = file.filename or "document"
+    ext = Path(filename).suffix.lower()
+    mime_type = (file.content_type or "").split(";", 1)[0].strip().lower()
+
+    if ext not in ALLOWED_DOCUMENT_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported document extension.",
+        )
+    if mime_type and mime_type not in settings.document_allowed_mime_types_set:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported document MIME type.",
+        )
+
+    contents = await file.read(settings.document_max_upload_bytes + 1)
+    if not contents:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(contents) > settings.document_max_upload_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Document file too large (max {settings.document_max_upload_bytes // (1024 * 1024)}MB).",
+        )
+    return contents
 
 @router.post("/documents/upload", response_model=DocumentRefResponse, status_code=201)
 async def upload_document(
@@ -40,9 +72,7 @@ async def upload_document(
     if str(user_id) != str(current_user.id):
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    contents = await file.read()
-    if not contents:
-        raise HTTPException(status_code=400, detail="Empty file")
+    contents = await _read_validated_upload(file)
 
     result = await ingest_user_document(
         db=db,

@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Loader2 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { createSession, vibeCheck } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
-import type { VibeEnum, VibeCheckResponse, SessionResponse, SafeHarborEnum } from '@/types'
+import { GetHelpButton } from '@/components/CrisisSupport'
+import type { VibeEnum, VibeCheckResponse, SessionResponse } from '@/types'
 
 /* ─── Design tokens ─── */
 const COLORS = {
@@ -49,12 +50,6 @@ function characterColorFromVibe(vibe: VibeEnum) {
   return COLORS.brandBlue
 }
 
-function safeHarborFromVibe(vibe: VibeEnum): SafeHarborEnum {
-  if (vibe === 'storm') return 'red'
-  if (vibe === 'angry' || vibe === 'guarded') return 'yellow'
-  return 'green'
-}
-
 function safeHarborColor(level: string) {
   if (level === 'green') return COLORS.safeGreen
   if (level === 'yellow') return COLORS.safeYellow
@@ -66,6 +61,7 @@ export default function VibeCheck() {
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<VibeCheckResponse | null>(null)
+  const [error, setError] = useState('')
   const navigate = useNavigate()
   const { user } = useAuth()
 
@@ -75,21 +71,13 @@ export default function VibeCheck() {
   const handleContinue = async () => {
     if (!selected || !user?.id) return
     setLoading(true)
+    setError('')
     try {
       const session = await createSession(user.id) as SessionResponse
       const vibeRes = await vibeCheck(session.id, selected, notes || null) as VibeCheckResponse
       setResult(vibeRes)
-    } catch {
-      // Fallback demo mode
-      setResult({
-        session_id: 'demo-session-id',
-        vibe: selected,
-        vibe_emoji: selectedVibe?.emoji || '💎',
-        character_assigned: selected === 'solid' || selected === 'storm' ? 'navigator' : 'challenger',
-        character_name: selected === 'solid' || selected === 'storm' ? 'Yogi' : 'Vex',
-        message: `You're feeling ${selected}. ${selected === 'solid' || selected === 'storm' ? 'Yogi' : 'Vex'} is here to help you navigate.`,
-        safe_harbor_level: safeHarborFromVibe(selected),
-      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save your vibe check.')
     } finally {
       setLoading(false)
     }
@@ -170,7 +158,10 @@ export default function VibeCheck() {
                 initial={{ y: 30, opacity: 0, scale: 0.95 }}
                 animate={{ y: 0, opacity: dimmed ? 0.4 : 1, scale: isSelected ? 1.05 : 1 }}
                 transition={{ duration: 0.5, delay: 0.3 + i * 0.12, ease: [0.16, 1, 0.3, 1] }}
-                onClick={() => setSelected(vibe.key)}
+                onClick={() => {
+                  setSelected(vibe.key)
+                  setError('')
+                }}
                 onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
                   if (!selected) {
                     e.currentTarget.style.borderColor = vibe.color
@@ -234,6 +225,13 @@ export default function VibeCheck() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {error && (
+          <div className="mt-4 flex items-center gap-2 rounded-xl border px-3 py-2 text-sm" style={{ borderColor: `${COLORS.safeRed}55`, background: `${COLORS.safeRed}12`, color: COLORS.safeRed }}>
+            <AlertTriangle size={16} />
+            {error}
+          </div>
+        )}
 
         {/* ─── Continue Button ─── */}
         <AnimatePresence>
@@ -345,6 +343,32 @@ export default function VibeCheck() {
                     Safe Harbor: {result.safe_harbor_level.charAt(0).toUpperCase() + result.safe_harbor_level.slice(1)}
                   </span>
                 </motion.div>
+
+                {result.safe_harbor_level !== 'green' && (
+                  <motion.div
+                    className="mt-2 w-full rounded-2xl border p-4 text-left"
+                    style={{
+                      background: `${safeHarborColor(result.safe_harbor_level)}0F`,
+                      borderColor: `${safeHarborColor(result.safe_harbor_level)}55`,
+                    }}
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ duration: 0.4, delay: 0.65 }}
+                  >
+                    <p className="text-sm font-semibold" style={{ color: COLORS.textPrimary }}>
+                      {result.vibe === 'storm'
+                        ? "That sounds really heavy. You don't have to carry it alone."
+                        : 'It’s okay to reach out for extra support right now.'}
+                    </p>
+                    <p className="mt-1 text-xs" style={{ color: COLORS.textSecondary }}>
+                      FlowQuest is here to talk it through — and if you need a real person right now,
+                      help is one tap away.
+                    </p>
+                    <div className="mt-3">
+                      <GetHelpButton variant="block" className="w-full" />
+                    </div>
+                  </motion.div>
+                )}
 
                 <motion.div
                   className="mt-2 flex w-full flex-col gap-2"

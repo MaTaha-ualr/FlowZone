@@ -19,7 +19,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { getSessions as fetchSessions, deleteSession as apiDeleteSession } from '@/lib/api'
+import { getChatHistory, getSessions as fetchSessions, deleteSession as apiDeleteSession } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
 
 /* ─── Types ─── */
@@ -152,6 +152,28 @@ function historyFromApi(session: unknown): HistorySession {
   }
 }
 
+function messagesFromApi(raw: unknown): HistoryMessage[] {
+  const record = asRecord(raw)
+  const items = Array.isArray(raw) ? raw : Array.isArray(record.messages) ? record.messages : []
+  return items
+    .map((item) => {
+      const msg = asRecord(item)
+      const role = msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system' ? msg.role : 'system'
+      const content = stringValue(msg.content)
+      if (!content) return null
+      return {
+        role,
+        content,
+        timestamp: stringValue(msg.timestamp, new Date().toISOString()),
+      } satisfies HistoryMessage
+    })
+    .filter((msg): msg is HistoryMessage => msg !== null)
+}
+
+function previewFromMessages(messages: HistoryMessage[], fallback: string): string {
+  return messages.find((m) => m.role === 'user')?.content || messages[0]?.content || fallback
+}
+
 /* ─── Components ─── */
 
 function HexAvatar({ color, src, size = 40 }: { color: string; src?: string; size?: number }) {
@@ -189,6 +211,8 @@ export default function SessionHistory() {
   const [vibeFilter, setVibeFilter] = useState<string>('all')
   const [sortNewest, setSortNewest] = useState(true)
   const [detailSession, setDetailSession] = useState<HistorySession | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
 
@@ -251,6 +275,28 @@ export default function SessionHistory() {
 
   const vibes = ['all', 'solid', 'angry', 'guarded', 'storm']
 
+  const openDetailSession = async (sess: HistorySession) => {
+    setDetailSession(sess)
+    setDetailError('')
+    if (sess.messages.length > 0) return
+
+    setDetailLoading(true)
+    try {
+      const messages = messagesFromApi(await getChatHistory(sess.id))
+      const enriched = {
+        ...sess,
+        messages,
+        preview: previewFromMessages(messages, sess.preview),
+      }
+      setDetailSession(enriched)
+      setSessions((prev) => prev.map((item) => (item.id === sess.id ? enriched : item)))
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : 'Could not load this transcript.')
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#050507' }}>
       <div className="max-w-[800px] mx-auto px-4 py-8">
@@ -305,7 +351,7 @@ export default function SessionHistory() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search transcripts..."
+                placeholder="Search sessions..."
                 className="w-full rounded-full pl-9 pr-4 py-2 text-sm outline-none border"
                 style={{ backgroundColor: '#18181F', color: '#F8F8FA', borderColor: '#2A2A35' }}
               />
@@ -444,7 +490,7 @@ export default function SessionHistory() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ delay: idx * 0.08, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                  onClick={() => setDetailSession(sess)}
+                  onClick={() => void openDetailSession(sess)}
                   className={cn(
                     'group relative rounded-lg border p-5 cursor-pointer transition-all',
                     'hover:-translate-y-0.5 hover:shadow-md'
@@ -609,7 +655,23 @@ export default function SessionHistory() {
                 {/* Transcript */}
                 <div className="space-y-3">
                   <h4 className="text-sm font-semibold uppercase tracking-wider" style={{ color: '#71717A' }}>Transcript</h4>
-                  {detailSession.messages.map((msg, i) => (
+                  {detailLoading && (
+                    <div className="flex items-center gap-2 p-3 rounded-lg text-sm" style={{ backgroundColor: '#18181F', color: '#A1A1AA', border: '1px solid #2A2A35' }}>
+                      <Clock className="w-4 h-4 animate-pulse" />
+                      Loading transcript...
+                    </div>
+                  )}
+                  {!detailLoading && detailError && (
+                    <div className="p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(220,38,38,0.06)', color: '#DC2626', border: '1px solid rgba(220,38,38,0.3)' }}>
+                      {detailError}
+                    </div>
+                  )}
+                  {!detailLoading && !detailError && detailSession.messages.length === 0 && (
+                    <div className="p-3 rounded-lg text-sm" style={{ backgroundColor: '#18181F', color: '#A1A1AA', border: '1px solid #2A2A35' }}>
+                      No transcript messages for this session yet.
+                    </div>
+                  )}
+                  {!detailLoading && !detailError && detailSession.messages.map((msg, i) => (
                     <div
                       key={i}
                       className={cn(

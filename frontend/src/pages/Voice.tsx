@@ -124,6 +124,9 @@ export default function Voice() {
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
+  // Mirrors `stream` so the unmount cleanup always sees the live stream, not
+  // the stale `null` captured by an empty-deps effect closure.
+  const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -170,9 +173,9 @@ export default function Voice() {
         audioRef.current.pause();
         audioRef.current = null;
       }
-      stream?.getTracks().forEach((t) => t.stop());
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ── Record → Transcribe → Chat → Speak round-trip ── */
@@ -266,6 +269,7 @@ export default function Voice() {
 
     try {
       const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = ms;
       setStream(ms);
 
       const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -283,6 +287,7 @@ export default function Voice() {
       recorder.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: chunksRef.current[0]?.type || "audio/webm" });
         ms.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
         setStream(null);
         await handleAudio(blob);
       };

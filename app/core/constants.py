@@ -135,12 +135,12 @@ CHARACTER_MODEL_MAP = {
         "description": "Needs strong persona adherence and nuanced pushback. Claude is worth the premium."
     },
     Character.NAVIGATOR: {
-        "primary": {"provider": ModelProvider.OPENAI, "model": ModelID.GPT_4O_MINI},
+        "primary": {"provider": ModelProvider.GOOGLE, "model": ModelID.GEMINI_FLASH},
         "fallbacks": [
-            {"provider": ModelProvider.ANTHROPIC, "model": ModelID.CLAUDE_SONNET},
+            {"provider": ModelProvider.OPENAI, "model": ModelID.GPT_4O_MINI},
             {"provider": ModelProvider.GROQ, "model": ModelID.LLAMA_70B},
         ],
-        "description": "Empathetic guidance. GPT-4o-mini is warm + cheap, Claude as quality fallback."
+        "description": "Empathetic guidance. Gemini Flash is free and fast, GPT-4o-mini as quality fallback."
     },
     Character.STRAIGHT_SHOOTER: {
         "primary": {"provider": ModelProvider.GROQ, "model": ModelID.LLAMA_70B},
@@ -150,12 +150,12 @@ CHARACTER_MODEL_MAP = {
         "description": "Direct and tactical. Llama-70B on Groq is fast and free, GPT-4o-mini as backup."
     },
     Character.STRATEGIST: {
-        "primary": {"provider": ModelProvider.ANTHROPIC, "model": ModelID.CLAUDE_SONNET},
+        "primary": {"provider": ModelProvider.OPENAI, "model": ModelID.GPT_4O_MINI},
         "fallbacks": [
-            {"provider": ModelProvider.OPENAI, "model": ModelID.GPT_4O_MINI},
             {"provider": ModelProvider.GROQ, "model": ModelID.LLAMA_70B},
+            {"provider": ModelProvider.GOOGLE, "model": ModelID.GEMINI_FLASH},
         ],
-        "description": "Long-game optimization. Claude reasons best, GPT-4o-mini is cheap fallback."
+        "description": "Long-game optimization. GPT-4o-mini handles planning well, free models backstop budget pressure."
     },
 }
 

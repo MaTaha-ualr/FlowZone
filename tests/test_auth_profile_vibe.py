@@ -163,3 +163,28 @@ async def test_vibe_check_updates_session_character_and_safe_harbor(real_auth_cl
     assert current_session["vibe_selected"] == "angry"
     assert current_session["character_active"] == "challenger"
     assert current_session["safe_harbor_level"] == "yellow"
+
+    today_response = await real_auth_client.get("/api/v1/checkins/today", headers=headers)
+    assert today_response.status_code == 200, today_response.text
+    today = today_response.json()
+    assert today["checked_in"] is True
+    assert today["check_in"]["vibe"] == "angry"
+
+    history_response = await real_auth_client.get("/api/v1/checkins/history", headers=headers)
+    assert history_response.status_code == 200, history_response.text
+    assert history_response.json()[0]["vibe"] == "angry"
+
+    safety_response = await real_auth_client.get("/api/v1/safety/events", headers=headers)
+    assert safety_response.status_code == 200, safety_response.text
+    safety_events = safety_response.json()
+    assert safety_events[0]["source"] == "vibe_check"
+    assert safety_events[0]["severity"] == "yellow"
+
+    activity_response = await real_auth_client.get(
+        f"/api/v1/users/{user_id}/activity?limit=10",
+        headers=headers,
+    )
+    assert activity_response.status_code == 200, activity_response.text
+    activity_types = {item["type"] for item in activity_response.json()}
+    assert "vibe_check" in activity_types
+    assert "mask" in activity_types

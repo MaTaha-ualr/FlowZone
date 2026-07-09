@@ -28,12 +28,24 @@ interface DisplayNote {
   created_at: string
 }
 
+type MentorNoteType = 'observation' | 'vouch' | 'risk_flag' | 'goal_update'
+
+const NOTE_TYPE_OPTIONS: Array<{ value: MentorNoteType; label: string }> = [
+  { value: 'observation', label: 'Observation' },
+  { value: 'goal_update', label: 'Goal update' },
+  { value: 'vouch', label: 'Vouch' },
+  { value: 'risk_flag', label: 'Risk flag' },
+]
+
 const NOTE_TYPE_ICON: Record<string, typeof CheckCircle> = {
   check_in: CheckCircle,
   session: Star,
   incident: AlertTriangle,
   milestone: Star,
   flag: AlertTriangle,
+  observation: CheckCircle,
+  goal_update: Star,
+  risk_flag: AlertTriangle,
   vouch: Star,
 }
 
@@ -43,6 +55,9 @@ const NOTE_TYPE_COLOR: Record<string, string> = {
   incident: '#DC2626',
   milestone: '#D4AF37',
   flag: '#DC2626',
+  observation: '#10B981',
+  goal_update: '#00A8E8',
+  risk_flag: '#DC2626',
   vouch: '#D4AF37',
 }
 
@@ -53,7 +68,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 function noteFromApi(raw: unknown): DisplayNote {
   const r = asRecord(raw)
   const id = typeof r.id === 'string' ? r.id : crypto.randomUUID()
-  const type = typeof r.note_type === 'string' ? r.note_type : (typeof r.type === 'string' ? r.type : 'check_in')
+  const type = typeof r.note_type === 'string' ? r.note_type : (typeof r.type === 'string' ? r.type : 'observation')
   const content =
     typeof r.sanitized_content === 'string' && r.sanitized_content.length > 0
       ? r.sanitized_content
@@ -100,7 +115,7 @@ export default function MentorNotes() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>('')
 
-  const [noteType, setNoteType] = useState<string>('check_in')
+  const [noteType, setNoteType] = useState<MentorNoteType>('observation')
   const [content, setContent] = useState('')
   const [vouchPoints, setVouchPoints] = useState(0)
   const [riskFlag, setRiskFlag] = useState(false)
@@ -119,7 +134,7 @@ export default function MentorNotes() {
     setContent('')
     setVouchPoints(0)
     setRiskFlag(false)
-    setNoteType('check_in')
+    setNoteType('observation')
     setSaveError('')
 
     Promise.all([
@@ -158,20 +173,20 @@ export default function MentorNotes() {
     setSaving(true)
     setSaveError('')
     try {
+      const isRiskFlag = riskFlag || noteType === 'risk_flag'
+      const submittedType: MentorNoteType = isRiskFlag ? 'risk_flag' : vouchPoints > 0 ? 'vouch' : noteType
       const created = await createMentorNote({
         user_id: userId,
-        mentor_id: currentUser.id,
-        mentor_name: currentUser.name,
-        note_type: noteType,
+        note_type: submittedType,
         content,
         vouch_points: vouchPoints,
-        risk_flag_level: riskFlag ? 'red' : 'none',
+        ...(isRiskFlag ? { risk_flag_level: 'red' } : {}),
       })
       setNotes((prev) => [noteFromApi(created), ...prev])
       setContent('')
       setVouchPoints(0)
       setRiskFlag(false)
-      setNoteType('check_in')
+      setNoteType('observation')
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save note')
     } finally {
@@ -269,17 +284,17 @@ export default function MentorNotes() {
       <div className="p-5 rounded-fz-lg bg-bgElevated border border-borderSubtle space-y-4">
         <h2 className="font-display text-xl text-brandGold">NEW NOTE</h2>
         <div className="flex flex-wrap gap-2">
-          {(['check_in', 'session', 'incident', 'milestone', 'flag'] as const).map((t) => (
+          {NOTE_TYPE_OPTIONS.map((option) => (
             <button
-              key={t}
-              onClick={() => setNoteType(t)}
+              key={option.value}
+              onClick={() => setNoteType(option.value)}
               className={`px-3 py-1.5 rounded-fz-md text-xs font-medium border transition-colors ${
-                noteType === t
+                noteType === option.value
                   ? 'bg-brandGold text-textInverse border-brandGold'
                   : 'bg-bgOverlay text-textSecondary border-borderSubtle'
               }`}
             >
-              {t.replace('_', ' ')}
+              {option.label}
             </button>
           ))}
         </div>

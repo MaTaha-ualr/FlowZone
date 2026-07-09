@@ -10,12 +10,17 @@ Changes:
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, desc
 from app.database import get_db
 from app.models.user import User
+from app.models.document_ref import DocumentRef
+from app.models.mentor_note import MentorNote
+from app.models.safety_event import SafetyEvent
+from app.models.session import Session
+from app.models.trust_score import TrustScore
 from app.schemas.api import (
     UserCreate, UserResponse, UserListResponse,
-    IntakeAnswers, IntakeResponse
+    IntakeAnswers, IntakeResponse, ActivityItemResponse,
 )
 from app.core.constants import (
     Character, CHARACTER_ASSIGNMENT_RULES, Vibe,
@@ -25,6 +30,16 @@ from app.core.config import settings
 from app.core.security import get_current_user, get_current_user_optional
 
 router = APIRouter(prefix="/api/v1/users", tags=["Users"])
+
+
+def _is_staff(user: User) -> bool:
+    return (user.role or "").lower() in {"mentor", "admin"}
+
+
+def _enum_value(value) -> str | None:
+    if value is None:
+        return None
+    return value.value if hasattr(value, "value") else str(value)
 
 @router.post("", response_model=UserResponse, status_code=201)
 async def create_user(
@@ -89,6 +104,132 @@ async def list_users(
     total = count_result.scalar()
 
     return UserListResponse(users=users, total=total)
+
+
+@router.get("/{user_id}/activity", response_model=list[ActivityItemResponse])
+async def get_user_activity(
+    user_id: uuid.UUID,
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return a real, typed activity feed for dashboard timelines."""
+    if str(user_id) != str(current_user.id) and not _is_staff(current_user):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    user = await db.get(User, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    events: list[dict] = []
+
+    session_result = await db.execute(
+        select(Session)
+        .where(Session.user_id == user_id)
+        .order_by(desc(Session.started_at))
+        .limit(limit)
+    )
+    for session in session_result.scalars().all():
+        if session.vibe_selected:
+            vibe = _enum_value(session.vibe_selected)
+            events.append({
+                "id": f"vibe:{session.id}",
+                "type": "vibe_check",
+                "title": "Vibe check saved",
+                "description": f"{vibe.title()} vibe recorded.",
+                "timestamp": session.started_at,
+                "source_id": str(session.id),
+            })
+        events.append({
+            "id": f"session:{session.id}",
+            "type": "flowquest",
+            "title": "FlowQuest session started",
+            "description": "A conversation session was opened.",
+            "timestamp": session.started_at,
+            "delta": float(session.trust_score_delta or 0.0),
+            "source_id": str(session.id),
+        })
+
+    document_result = await db.execute(
+        select(DocumentRef)
+        .where(DocumentRef.user_id == user_id)
+        .order_by(desc(DocumentRef.created_at))
+        .limit(limit)
+    )
+    for doc in document_result.scalars().all():
+        events.append({
+            "id": f"document:{doc.id}",
+            "type": "document",
+            "title": "Document uploaded",
+            "description": f"{doc.filename} is {doc.processing_status}.",
+            "timestamp": doc.created_at,
+            "source_id": str(doc.id),
+        })
+
+    note_result = await db.execute(
+        select(MentorNote)
+        .where(MentorNote.user_id == user_id)
+        .order_by(desc(MentorNote.created_at))
+        .limit(limit)
+    )
+    for note in note_result.scalars().all():
+        if note.note_type == "vouch":
+            title = "Mentor vouch added"
+            event_type = "vouch"
+            delta = float(note.vouch_points or 0)
+        elif note.note_type == "risk_flag":
+            title = "Mentor risk flag added"
+            event_type = "mask"
+            delta = None
+        else:
+            title = "Mentor note added"
+            event_type = "tactical_action"
+            delta = None
+        events.append({
+            "id": f"mentor_note:{note.id}",
+            "type": event_type,
+            "title": title,
+            "description": note.sanitized_content or "A mentor note was saved.",
+            "timestamp": note.created_at,
+            "delta": delta,
+            "source_id": str(note.id),
+        })
+
+    trust_result = await db.execute(
+        select(TrustScore)
+        .where(TrustScore.user_id == user_id)
+        .order_by(desc(TrustScore.score_date))
+        .limit(limit)
+    )
+    for snapshot in trust_result.scalars().all():
+        events.append({
+            "id": f"trust:{snapshot.id}",
+            "type": "tier_change",
+            "title": "Trust score snapshot updated",
+            "description": f"Score moved to {round(float(snapshot.total_score or 0.0), 1)}.",
+            "timestamp": snapshot.calculated_at,
+            "delta": float(snapshot.total_score or 0.0),
+            "source_id": str(snapshot.id),
+        })
+
+    safety_result = await db.execute(
+        select(SafetyEvent)
+        .where(SafetyEvent.user_id == user_id)
+        .order_by(desc(SafetyEvent.created_at))
+        .limit(limit)
+    )
+    for event in safety_result.scalars().all():
+        events.append({
+            "id": f"safety:{event.id}",
+            "type": "mask",
+            "title": f"Safety event opened: {event.severity}",
+            "description": event.description or event.trigger,
+            "timestamp": event.created_at,
+            "source_id": str(event.id),
+        })
+
+    events.sort(key=lambda item: item["timestamp"], reverse=True)
+    return events[:limit]
 
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(

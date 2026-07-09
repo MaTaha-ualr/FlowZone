@@ -108,6 +108,12 @@ async def _get_demo_user(
     """
     if not settings.app_demo_mode:
         return None
+    if settings.app_env.value == "production":
+        return None
+    if settings.app_env.value != "development":
+        demo_secret = settings.app_demo_secret
+        if not demo_secret or request.headers.get("X-Demo-Secret") != demo_secret:
+            return None
     user_id_str = request.headers.get("X-User-ID")
     if not user_id_str:
         return None
@@ -175,10 +181,22 @@ async def get_current_user_optional(
 async def require_admin(
     user: User = Depends(get_current_user),
 ) -> User:
-    """
-    Placeholder for admin authorization.
-    In production, check user.role == 'admin' or similar.
-    """
-    # For now, any authenticated user can access admin endpoints in demo
-    # TODO: add role-based checks when User model has roles
+    """Require an admin account for sensitive endpoints."""
+    if (user.role or "").lower() != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required.",
+        )
+    return user
+
+
+async def require_mentor_or_admin(
+    user: User = Depends(get_current_user),
+) -> User:
+    """Require a staff role that can act on youth records."""
+    if (user.role or "").lower() not in {"mentor", "admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Mentor role required.",
+        )
     return user

@@ -1,4 +1,4 @@
-export type RoleEnum = 'youth' | 'mentor'
+export type RoleEnum = 'youth' | 'mentor' | 'admin'
 export type CharacterEnum = 'challenger' | 'navigator' | 'straight_shooter' | 'strategist' | 'ace' | 'nova'
 export type SafeHarborEnum = 'green' | 'yellow' | 'red'
 export type VibeEnum = 'solid' | 'angry' | 'guarded' | 'storm'
@@ -82,6 +82,21 @@ export interface VibeCheckResponse {
   safe_harbor_level: SafeHarborEnum
 }
 
+export interface CheckInItem {
+  id: string
+  session_id: string
+  user_id: string
+  vibe: VibeEnum
+  notes: string | null
+  safe_harbor_level: SafeHarborEnum
+  checked_in_at: string
+}
+
+export interface CheckInTodayResponse {
+  checked_in: boolean
+  check_in: CheckInItem | null
+}
+
 export interface TrustDelta {
   date: string
   score: number
@@ -156,6 +171,24 @@ export interface ActivityItem {
   timestamp: string
   delta?: number
   icon?: string
+}
+
+export interface SafetyEvent {
+  id: string
+  user_id: string
+  session_id: string | null
+  source: string
+  severity: SafeHarborEnum
+  trigger: string
+  description: string | null
+  status: 'open' | 'acknowledged' | 'resolved' | string
+  assigned_to: string | null
+  acknowledged_by: string | null
+  acknowledged_at: string | null
+  resolved_by: string | null
+  resolved_at: string | null
+  created_at: string
+  updated_at: string
 }
 
 /* ─── Chat Types ─── */
@@ -300,6 +333,10 @@ export interface MentorYouthItem {
   check_in_streak: number
   last_session_at?: string
   has_alert: boolean
+}
+
+export interface MentorAlert extends SafetyEvent {
+  youth_name: string
 }
 
 /* ─── Auth Types ─── */

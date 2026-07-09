@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import type { CheckInItem, CheckInTodayResponse, MentorAlert, SafetyEvent } from "@/types";
 
 export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
@@ -178,6 +179,27 @@ export function getVouches(userId: string) {
   return get(`/api/v1/trust/${userId}/vouches`);
 }
 
+export interface TrustHistoryPoint {
+  date: string;
+  total: number;
+  consistency: number;
+  weight: number;
+  honesty: number;
+  regulation: number;
+  mentor: number;
+  penalty: number;
+}
+
+export interface TrustHistoryResponse {
+  user_id: string;
+  days_requested: number;
+  history: TrustHistoryPoint[];
+}
+
+export function getTrustHistory(userId: string, days = 30) {
+  return get<TrustHistoryResponse>(`/api/v1/trust/${userId}/history?days=${days}`);
+}
+
 export function getRewards() {
   return get("/api/v1/profile/rewards");
 }
@@ -208,6 +230,22 @@ export function getCurrentSession(userId: string) {
 
 export function vibeCheck(sessionId: string, vibe: string, notes?: string | null) {
   return post("/api/v1/vibe/check", { session_id: sessionId, vibe, notes });
+}
+
+export function getTodayCheckIn() {
+  return get<CheckInTodayResponse>("/api/v1/checkins/today");
+}
+
+export function getCheckInHistory(limit = 30) {
+  return get<CheckInItem[]>(`/api/v1/checkins/history?limit=${limit}`);
+}
+
+export function createSafetyEvent(data: Record<string, unknown>) {
+  return post<SafetyEvent>("/api/v1/safety/events", data);
+}
+
+export function getSafetyEvent(eventId: string) {
+  return get<SafetyEvent>(`/api/v1/safety/events/${eventId}`);
 }
 
 export function sendChatMessage(sessionId: string, content: string, vibe?: string) {
@@ -281,6 +319,18 @@ export function getMentorNotes(youthId: string) {
 
 export function createMentorNote(note: Record<string, unknown>) {
   return post("/api/v1/mentors/notes", note);
+}
+
+export function getMentorAlerts(status = "open") {
+  return get<MentorAlert[]>(`/api/v1/mentors/alerts?status=${encodeURIComponent(status)}`);
+}
+
+export function acknowledgeMentorAlert(eventId: string) {
+  return post(`/api/v1/mentors/alerts/${eventId}/acknowledge`);
+}
+
+export function resolveMentorAlert(eventId: string) {
+  return post(`/api/v1/mentors/alerts/${eventId}/resolve`);
 }
 
 export function getActivityFeed(userId: string, limit = 20) {

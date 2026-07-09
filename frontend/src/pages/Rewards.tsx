@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Lock, CheckCircle, Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { toast } from 'sonner'
 
 import { getRewards, redeemReward, useApi } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
@@ -26,29 +27,28 @@ const COLORS = {
   vetted: '#D4AF37',
 }
 
-/* ─── Mock data ─── */
-const MOCK_REWARDS: RewardsResponse = {
-  current_score: 142,
-  available_vouches: [
-    { key: 'late_checkin', name: 'Late Check-In', icon: '🌙', cost: 50, can_afford: true, locked: false },
-    { key: 'curfew_extension', name: 'Curfew Extension', icon: '🚪', cost: 150, can_afford: false, locked: false },
-    { key: 'reduced_meeting', name: 'Reduced Meeting', icon: '📅', cost: 200, can_afford: false, locked: true },
-    { key: 'solo_pass', name: 'Solo Pass', icon: '🚶', cost: 300, can_afford: false, locked: true },
-    { key: 'trust_premium', name: 'Trust Premium', icon: '⭐', cost: 500, can_afford: false, locked: true },
-    { key: 'character_switch', name: 'Character Switch', icon: '🔄', cost: 75, can_afford: true, locked: false },
-  ],
-  redeemed_vouches: [
-    { key: 'late_checkin', name: 'Late Check-In', icon: '🌙', redeemed_at: '2024-02-28T10:00:00Z', status: 'used' },
-    { key: 'character_switch', name: 'Character Switch (Ace)', icon: '🔄', redeemed_at: '2024-02-25T10:00:00Z', status: 'used' },
-  ] as RedeemedVouch[],
-  can_redeem: true,
-  next_unlock_tier: 'The Flex',
-  next_unlock_score: 200,
-}
-
 type RedeemedVouchApi = Partial<RedeemedVouch> & {
   type?: string
   created_at?: string
+}
+
+const EMPTY_REWARDS: RewardsResponse = {
+  current_score: 0,
+  available_vouches: [],
+  redeemed_vouches: [],
+  can_redeem: false,
+  next_unlock_tier: null,
+  next_unlock_score: null,
+}
+
+const VOUCH_DESCRIPTIONS: Record<string, string> = {
+  curfew_extension: 'Request a later curfew window for a specific night.',
+  social_pass: 'Request a supervised social or community pass.',
+  reduced_monitoring: 'Request a lower monitoring cadence after sustained progress.',
+}
+
+function vouchDescription(vouch: Pick<RewardItemResponse, 'key' | 'name'>): string {
+  return VOUCH_DESCRIPTIONS[vouch.key] || `${vouch.name} is reviewed by your mentor before activation.`
 }
 
 /* ─── Confetti particle ─── */
@@ -94,14 +94,16 @@ export default function Rewards() {
   const [confirmVouch, setConfirmVouch] = useState<RewardItemResponse | null>(null)
   const [redeeming, setRedeeming] = useState(false)
   const [success, setSuccess] = useState(false)
-  const [redeemedList, setRedeemedList] = useState<RedeemedVouch[]>(MOCK_REWARDS.redeemed_vouches)
-  const [currentScore, setCurrentScore] = useState(MOCK_REWARDS.current_score)
+  const [redeemedList, setRedeemedList] = useState<RedeemedVouch[]>([])
 
   const rewardsApi = useApi<RewardsResponse>(() => getRewards() as Promise<RewardsResponse>, true)
-  const rewards = rewardsApi.data || MOCK_REWARDS
+  const rewards = rewardsApi.data || {
+    ...EMPTY_REWARDS,
+    current_score: user?.current_trust_score ?? user?.display_score ?? 0,
+  }
 
   useEffect(() => {
-    if (rewardsApi.data?.redeemed_vouches) {
+    if (rewardsApi.data) {
       setRedeemedList(
         rewardsApi.data.redeemed_vouches.map((item: RedeemedVouchApi) => ({
           key: item.key || item.type || 'vouch',
@@ -114,40 +116,35 @@ export default function Rewards() {
     }
   }, [rewardsApi.data])
 
-  const score = rewards.current_score || currentScore
+  const score = rewards.current_score ?? 0
   const nextScore = rewards.next_unlock_score || 200
   const progressPercent = Math.min((score / 500) * 100, 100)
 
   const handleRedeem = async () => {
     if (!confirmVouch) return
+    if (!user?.id) {
+      toast.error('Please log in again to redeem a vouch.')
+      return
+    }
     setRedeeming(true)
     try {
-      if (user?.id) {
-        await redeemReward(user.id, confirmVouch.key)
-        rewardsApi.refetch().catch(() => undefined)
-      }
-    } catch {
-      // Demo fallback
-    }
-    setTimeout(() => {
-      setRedeeming(false)
+      // Only reflect success after the backend confirms the redemption. The
+      // authoritative score and redeemed list come back from the refetch.
+      await redeemReward(user.id, confirmVouch.key)
+      await rewardsApi.refetch().catch(() => undefined)
       setSuccess(true)
-      setCurrentScore((s) => s - confirmVouch.cost)
-      setRedeemedList((prev) => [
-        {
-          key: confirmVouch.key,
-          name: confirmVouch.name,
-          icon: confirmVouch.icon,
-          redeemed_at: new Date().toISOString(),
-          status: 'active',
-        },
-        ...prev,
-      ])
+      toast.success(`Redeemed ${confirmVouch.name}.`)
       setTimeout(() => {
         setSuccess(false)
         setConfirmVouch(null)
       }, 1500)
-    }, 800)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Redemption failed. Your trust score was not changed.',
+      )
+    } finally {
+      setRedeeming(false)
+    }
   }
 
   return (
@@ -276,7 +273,18 @@ export default function Rewards() {
                 </span>
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {rewards.available_vouches.map((vouch, i) => {
+                {rewardsApi.loading && (
+                  <div className="col-span-full flex items-center justify-center py-10 text-sm" style={{ color: COLORS.textMuted }}>
+                    <Loader2 size={18} className="mr-2 animate-spin" />
+                    Loading available vouches...
+                  </div>
+                )}
+                {!rewardsApi.loading && rewards.available_vouches.length === 0 && (
+                  <div className="col-span-full rounded-xl border p-5 text-center text-sm" style={{ borderColor: COLORS.borderSubtle, color: COLORS.textMuted }}>
+                    No vouches are available yet.
+                  </div>
+                )}
+                {!rewardsApi.loading && rewards.available_vouches.map((vouch, i) => {
                   const canAfford = vouch.can_afford && !vouch.locked
                   const locked = vouch.locked
                   const needMore = !vouch.can_afford && !vouch.locked
@@ -307,12 +315,7 @@ export default function Rewards() {
                         {vouch.name}
                       </h4>
                       <p className="mt-1 text-xs" style={{ color: COLORS.textSecondary }}>
-                        {vouch.key === 'late_checkin' && 'Skip one daily check-in. No penalty.'}
-                        {vouch.key === 'curfew_extension' && 'Stay out 2 hours later. One weekend night.'}
-                        {vouch.key === 'reduced_meeting' && 'Skip one PO/case worker meeting.'}
-                        {vouch.key === 'solo_pass' && 'Walk alone. No escort. One week.'}
-                        {vouch.key === 'trust_premium' && 'Full autonomy review. All restrictions considered.'}
-                        {vouch.key === 'character_switch' && 'Pick your character for one session.'}
+                        {vouchDescription(vouch)}
                       </p>
                       <div className="mt-3 flex w-full items-center justify-between">
                         <span className="text-xs font-medium" style={{ fontFamily: 'JetBrains Mono', color: COLORS.brandGold }}>
@@ -492,8 +495,7 @@ export default function Rewards() {
                     {confirmVouch.name}
                   </h3>
                   <p className="mt-1 text-sm" style={{ color: COLORS.textSecondary }}>
-                    {confirmVouch.key === 'late_checkin' && 'Skip one daily check-in. No penalty.'}
-                    {confirmVouch.key === 'character_switch' && 'Pick your character for one session.'}
+                    {vouchDescription(confirmVouch)}
                   </p>
                   <p className="mt-3 text-base font-medium" style={{ color: COLORS.brandGold }}>
                     Spend {confirmVouch.cost} TRUST?

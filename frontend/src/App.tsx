@@ -1,6 +1,9 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import Layout from '@/components/Layout'
+import ErrorBoundary from '@/components/ErrorBoundary'
+import { CrisisSupportProvider } from '@/components/CrisisSupport'
+import { Toaster } from '@/components/ui/sonner'
 
 import Home from '@/pages/Home'
 import Login from '@/pages/Login'
@@ -17,6 +20,7 @@ import Documents from '@/pages/Documents'
 import Voice from '@/pages/Voice'
 import MentorDashboard from '@/pages/MentorDashboard'
 import MentorNotes from '@/pages/MentorNotes'
+import NotFound from '@/pages/NotFound'
 
 function ProtectedRoute({ children, mentorOnly = false }: { children: React.ReactNode; mentorOnly?: boolean }) {
   const { isAuthenticated, isLoading, role } = useAuth()
@@ -42,15 +46,34 @@ function AppRoutes() {
         <Route path="/intake" element={<ProtectedRoute><Intake /></ProtectedRoute>} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/vibe-check" element={<ProtectedRoute><VibeCheck /></ProtectedRoute>} />
-        <Route path="/flowquest/:sessionId?" element={<ProtectedRoute><FlowQuest /></ProtectedRoute>} />
+        <Route
+          path="/flowquest/:sessionId?"
+          element={
+            <ProtectedRoute>
+              <ErrorBoundary label="FlowQuest">
+                <FlowQuest />
+              </ErrorBoundary>
+            </ProtectedRoute>
+          }
+        />
         <Route path="/sessions" element={<ProtectedRoute><SessionHistory /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
         <Route path="/trust" element={<ProtectedRoute><TrustDetail /></ProtectedRoute>} />
         <Route path="/rewards" element={<ProtectedRoute><Rewards /></ProtectedRoute>} />
         <Route path="/documents" element={<ProtectedRoute><Documents /></ProtectedRoute>} />
-        <Route path="/voice" element={<ProtectedRoute><Voice /></ProtectedRoute>} />
+        <Route
+          path="/voice"
+          element={
+            <ProtectedRoute>
+              <ErrorBoundary label="Voice">
+                <Voice />
+              </ErrorBoundary>
+            </ProtectedRoute>
+          }
+        />
         <Route path="/mentor/dashboard" element={<ProtectedRoute mentorOnly><MentorDashboard /></ProtectedRoute>} />
         <Route path="/mentor/notes/:userId" element={<ProtectedRoute mentorOnly><MentorNotes /></ProtectedRoute>} />
+        <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
   )
@@ -58,10 +81,15 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <HashRouter>
-        <AppRoutes />
-      </HashRouter>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <HashRouter>
+          <CrisisSupportProvider>
+            <AppRoutes />
+            <Toaster position="top-center" richColors closeButton />
+          </CrisisSupportProvider>
+        </HashRouter>
+      </AuthProvider>
+    </ErrorBoundary>
   )
 }

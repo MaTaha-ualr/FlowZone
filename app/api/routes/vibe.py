@@ -1,5 +1,7 @@
 """Vibe check routes."""
 
+from datetime import date, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +19,7 @@ from app.database import get_db
 from app.models.session import Session
 from app.models.user import User
 from app.schemas.api import VibeCheckRequest, VibeCheckResponse
+from app.api.routes.safety import create_safety_event
 from app.services.profile_projection import coerce_enum, user_character
 
 router = APIRouter(prefix="/api/v1/vibe", tags=["Vibe"])
@@ -38,6 +41,20 @@ def _safe_harbor_for_vibe(vibe: Vibe) -> SafeHarborLevel:
 
 def _max_safe_harbor(*levels: SafeHarborLevel) -> SafeHarborLevel:
     return max(levels, key=lambda level: SAFE_HARBOR_RANK[level])
+
+
+def _record_check_in(user: User) -> None:
+    today = date.today()
+    last = user.last_check_in.date() if user.last_check_in else None
+    if last is None:
+        user.check_in_streak = 1
+    elif last == today:
+        user.check_in_streak = user.check_in_streak or 1
+    elif (today - last).days == 1:
+        user.check_in_streak = (user.check_in_streak or 0) + 1
+    else:
+        user.check_in_streak = 1
+    user.last_check_in = datetime.utcnow()
 
 
 @router.post("/check", response_model=VibeCheckResponse)
@@ -81,6 +98,19 @@ async def check_vibe(
     session.character_active = character
     session.safe_harbor_level = safe_harbor_level
     current_user.current_character = character
+    current_user.safe_harbor_floor = _max_safe_harbor(floor_level, safe_harbor_level)
+    _record_check_in(current_user)
+
+    if safe_harbor_level != SafeHarborLevel.GREEN:
+        await create_safety_event(
+            db=db,
+            user_id=current_user.id,
+            session_id=session.id,
+            source="vibe_check",
+            severity=safe_harbor_level.value,
+            trigger=vibe.value,
+            description=data.notes,
+        )
 
     await db.flush()
     await db.refresh(session)

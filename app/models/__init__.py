@@ -15,8 +15,10 @@ from app.models.document_ref import DocumentRef
 from app.models.api_usage import ApiUsage
 from app.models.vouch import Vouch
 from app.models.pattern import Pattern
+from app.models.safety_event import SafetyEvent
 
 __all__ = [
     "User", "Session", "Message", "TrustScore", "MentorNote",
     "SchoolData", "DocumentRef", "ApiUsage", "Vouch", "Pattern",
+    "SafetyEvent",
 ]

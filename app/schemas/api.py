@@ -46,6 +46,7 @@ class SafeHarborEnum(str, Enum):
 class RoleEnum(str, Enum):
     youth = "youth"
     mentor = "mentor"
+    admin = "admin"
 
 
 # ============================================================
@@ -246,6 +247,31 @@ class VibeCheckResponse(BaseModel):
     safe_harbor_level: SafeHarborEnum
 
 
+class CheckInItemResponse(BaseModel):
+    id: UUID
+    session_id: UUID
+    user_id: UUID
+    vibe: VibeEnum
+    notes: Optional[str] = None
+    safe_harbor_level: SafeHarborEnum
+    checked_in_at: datetime
+
+
+class CheckInTodayResponse(BaseModel):
+    checked_in: bool
+    check_in: Optional[CheckInItemResponse] = None
+
+
+class ActivityItemResponse(BaseModel):
+    id: str
+    type: str
+    title: str
+    description: str
+    timestamp: datetime
+    delta: Optional[float] = None
+    source_id: Optional[str] = None
+
+
 # ============================================================
 # INTAKE SCHEMAS
 # ============================================================
@@ -346,8 +372,8 @@ class TTSRequest(BaseModel):
 class MentorNoteCreate(BaseModel):
     """Mentor submits an observation, vouch, or risk flag."""
     user_id: UUID
-    mentor_id: str
-    mentor_name: str
+    mentor_id: Optional[str] = None
+    mentor_name: Optional[str] = None
     note_type: str = Field(
         default="observation",
         pattern="^(observation|vouch|risk_flag|goal_update)$"
@@ -368,6 +394,38 @@ class MentorNoteResponse(BaseModel):
     vouch_points: int
     risk_flag_level: Optional[str]
     created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SafetyEventCreate(BaseModel):
+    user_id: Optional[UUID] = None
+    session_id: Optional[UUID] = None
+    source: str = Field(
+        default="manual",
+        pattern="^(manual|crisis_button|vibe_check|safe_harbor|mentor_note|chat|mask|system)$",
+    )
+    severity: SafeHarborEnum
+    trigger: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(default=None, max_length=2000)
+
+
+class SafetyEventResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    session_id: Optional[UUID] = None
+    source: str
+    severity: SafeHarborEnum
+    trigger: str
+    description: Optional[str] = None
+    status: str
+    assigned_to: Optional[UUID] = None
+    acknowledged_by: Optional[UUID] = None
+    acknowledged_at: Optional[datetime] = None
+    resolved_by: Optional[UUID] = None
+    resolved_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 

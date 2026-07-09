@@ -17,6 +17,8 @@ import { SAFE_HARBOR_INFO } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { getMentorRoster } from '@/lib/api'
 
+const EMPTY_YOUTH_LIST: MentorYouthItem[] = []
+
 function MiniSparkline({ color }: { color: string }) {
   const points = [30, 45, 40, 60, 55, 70, 65, 80, 75, 90]
   const max = Math.max(...points)
@@ -67,7 +69,7 @@ export default function MentorDashboard() {
     }
   }, [])
 
-  const youthList: MentorYouthItem[] = data?.youth ?? []
+  const youthList: MentorYouthItem[] = data?.youth ?? EMPTY_YOUTH_LIST
 
   const filtered = useMemo(() => {
     return youthList.filter((y) => {

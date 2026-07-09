@@ -17,6 +17,7 @@ Architecture Note:
 
 import time
 import asyncio
+import threading
 from collections import defaultdict
 from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -86,31 +87,34 @@ class RateLimiter:
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self._requests: dict[str, list[float]] = defaultdict(list)
+        self._lock = threading.RLock()
 
     def is_allowed(self, user_id: str) -> bool:
         """Check if user is within rate limit. Cleans old entries."""
-        now = time.time()
-        window_start = now - self.window_seconds
+        with self._lock:
+            now = time.time()
+            window_start = now - self.window_seconds
 
-        # Clean old entries
-        self._requests[user_id] = [
-            ts for ts in self._requests[user_id] if ts > window_start
-        ]
+            # Clean old entries
+            self._requests[user_id] = [
+                ts for ts in self._requests[user_id] if ts > window_start
+            ]
 
-        # Check limit
-        if len(self._requests[user_id]) >= self.max_requests:
-            return False
+            # Check limit
+            if len(self._requests[user_id]) >= self.max_requests:
+                return False
 
-        # Record this request
-        self._requests[user_id].append(now)
-        return True
+            # Record this request
+            self._requests[user_id].append(now)
+            return True
 
     def remaining(self, user_id: str) -> int:
         """How many requests the user has left in the current window."""
-        now = time.time()
-        window_start = now - self.window_seconds
-        recent = [ts for ts in self._requests[user_id] if ts > window_start]
-        return max(0, self.max_requests - len(recent))
+        with self._lock:
+            now = time.time()
+            window_start = now - self.window_seconds
+            recent = [ts for ts in self._requests[user_id] if ts > window_start]
+            return max(0, self.max_requests - len(recent))
 
 
 # ---- Singleton instances ----

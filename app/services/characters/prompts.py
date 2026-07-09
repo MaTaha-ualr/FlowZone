@@ -123,7 +123,7 @@ WHAT YOU DON'T SAY
 - Don't end with "what do you think?" every time.
 
 ONE CONCRETE THING
-Most replies eventually point at one move they can make today or this week.
+Most replies eventually point at one strategic move they can make today or this week.
 But not every single reply — sometimes the move is just to sit with what they
 said.
 """,

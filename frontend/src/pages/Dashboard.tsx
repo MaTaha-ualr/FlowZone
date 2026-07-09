@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
+import { toast } from 'sonner'
 import {
   Flame,
   Zap,
@@ -26,8 +27,10 @@ import {
 } from 'recharts'
 import { Link } from 'react-router-dom'
 
-import { get, getCurrentSession, useApi } from '@/lib/api'
+import { get, getActivityFeed, getCurrentSession, getTrustHistory, endSession, useApi, type TrustHistoryResponse } from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
+import TacticalReset from '@/components/TacticalReset'
+import { GetHelpButton } from '@/components/CrisisSupport'
 import type {
   UserProfileResponse,
   RainbowCircleResponse,
@@ -35,6 +38,8 @@ import type {
   ActivityItem,
   TrustDelta,
 } from '@/types'
+
+const EMPTY_TRUST_HISTORY: TrustHistoryResponse['history'] = []
 
 /* ─── Design tokens ─── */
 const COLORS = {
@@ -64,61 +69,49 @@ const COLORS = {
   vibeStorm: '#7C3AED',
 }
 
-/* ─── Mock data generators ─── */
-function genChartData(): TrustDelta[] {
-  const today = new Date()
-  const data: TrustDelta[] = []
-  let score = 110
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(today)
-    d.setDate(d.getDate() - i)
-    const delta = Math.random() > 0.7 ? (Math.random() > 0.3 ? Math.round((Math.random() * 8 + 1) * 10) / 10 : -Math.round(Math.random() * 15 + 5)) : Math.round((Math.random() * 3) * 10) / 10
-    score += delta
-    data.push({
-      date: d.toISOString().slice(5, 10),
-      score: Math.round(score * 10) / 10,
+/* ─── Real-data transforms ─── */
+
+/**
+ * Convert backend trust history into chart points, computing the day-over-day
+ * delta from consecutive totals. History is oldest-first from the API.
+ */
+function toChartData(history: TrustHistoryResponse['history']): TrustDelta[] {
+  return history.map((point, i) => {
+    const prev = i > 0 ? history[i - 1].total : point.total
+    const delta = Math.round((point.total - prev) * 10) / 10
+    return {
+      date: point.date.slice(5, 10),
+      fullDate: point.date,
+      score: Math.round(point.total * 10) / 10,
       delta,
-      event: i === 3 ? 'Mask detected' : i === 5 ? 'Tier change' : i === 8 ? 'Vouch earned' : undefined,
-      event_type: i === 3 ? 'mask' : i === 5 ? 'tier_change' : i === 8 ? 'vouch' : undefined,
-    })
-  }
-  return data
+    }
+  })
 }
 
-function genActivities(): ActivityItem[] {
-  return [
-    {
-      id: '1',
-      type: 'vibe_check',
-      title: 'Vibe Check — Solid',
-      description: 'You checked in feeling solid',
-      timestamp: new Date().toISOString(),
-      delta: 4.8,
-    },
-    {
-      id: '2',
-      type: 'flowquest',
-      title: 'FlowQuest with Vex',
-      description: 'Completed a session with Vex',
-      timestamp: new Date(Date.now() - 86400000).toISOString(),
-      delta: 3.2,
-    },
-    {
-      id: '3',
-      type: 'document',
-      title: 'Document uploaded',
-      description: 'Court records added',
-      timestamp: new Date(Date.now() - 3 * 86400000).toISOString(),
-    },
-    {
-      id: '4',
-      type: 'mask',
-      title: 'Mask detected during check-in',
-      description: 'Engine caught masking behavior',
-      timestamp: new Date(Date.now() - 4 * 86400000).toISOString(),
-      delta: -15,
-    },
-  ]
+/**
+ * Derive a recent-activity feed from real trust history. Each meaningful score
+ * change becomes a traceable item — no fabricated events. A dedicated activity
+ * endpoint can replace this later without changing the UI.
+ */
+function toActivities(history: TrustHistoryResponse['history']): ActivityItem[] {
+  const items: ActivityItem[] = []
+  for (let i = 1; i < history.length; i++) {
+    const point = history[i]
+    const delta = Math.round((point.total - history[i - 1].total) * 10) / 10
+    if (delta === 0) continue
+
+    const droppedByPenalty = delta < 0 && point.penalty < history[i - 1].penalty
+    items.push({
+      id: point.date,
+      type: droppedByPenalty ? 'mask' : delta > 0 ? 'vouch' : 'tactical_action',
+      title: delta > 0 ? 'Trust score went up' : droppedByPenalty ? 'Penalty applied' : 'Trust score dipped',
+      description: `Score moved to ${Math.round(point.total * 10) / 10}`,
+      timestamp: new Date(point.date).toISOString(),
+      delta,
+    })
+  }
+  // Most recent first.
+  return items.reverse().slice(0, 8)
 }
 
 /* ─── Animated number ─── */
@@ -265,18 +258,55 @@ export default function Dashboard() {
   }, false)
   const { refetch: refetchSession } = sessionApi
 
+  const historyApi = useApi<TrustHistoryResponse>(() => {
+    if (!user?.id) return Promise.reject(new Error('No user loaded'))
+    return getTrustHistory(user.id, 14)
+  }, false)
+  const { refetch: refetchHistory } = historyApi
+
+  const activityApi = useApi<ActivityItem[]>(() => {
+    if (!user?.id) return Promise.reject(new Error('No user loaded'))
+    return getActivityFeed(user.id, 8) as Promise<ActivityItem[]>
+  }, false)
+  const { refetch: refetchActivity } = activityApi
+
   useEffect(() => {
     if (user?.id) {
       refetchSession().catch(() => undefined)
+      refetchHistory().catch(() => undefined)
+      refetchActivity().catch(() => undefined)
     }
-  }, [refetchSession, user?.id])
+  }, [refetchSession, refetchHistory, refetchActivity, user?.id])
+
+  const [ending, setEnding] = useState(false)
+  const [resetOpen, setResetOpen] = useState(false)
 
   const profile = profileApi.data || user
   const rainbow = rainbowApi.data
   const session = sessionApi.data
 
-  const chartData = useMemo(() => genChartData(), [])
-  const activities = useMemo(() => genActivities(), [])
+  const history = historyApi.data?.history ?? EMPTY_TRUST_HISTORY
+  const chartData = useMemo(() => toChartData(history), [history])
+  const fallbackActivities = useMemo(() => toActivities(history), [history])
+  const activities = activityApi.data ?? fallbackActivities
+
+  const handleEndSession = useCallback(async () => {
+    if (!session?.id) return
+    setEnding(true)
+    try {
+      await endSession(session.id)
+      toast.success('Session ended.')
+      await Promise.all([
+        refetchSession().catch(() => undefined),
+        refetchHistory().catch(() => undefined),
+        refetchActivity().catch(() => undefined),
+      ])
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not end the session.')
+    } finally {
+      setEnding(false)
+    }
+  }, [session?.id, refetchSession, refetchHistory, refetchActivity])
 
   const tierColor = rainbow?.current_tier_color || COLORS.watch
   const progressPercent = rainbow?.progress_percent || 0
@@ -479,13 +509,13 @@ export default function Dashboard() {
                       RESUME
                     </Link>
                     <button
-                      className="rounded-full px-3 py-2 text-xs font-medium transition-colors hover:text-red-400"
+                      className="rounded-full px-3 py-2 text-xs font-medium transition-colors hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ color: COLORS.textMuted }}
-                      onClick={() => {
-                        /* end session */
-                      }}
+                      onClick={handleEndSession}
+                      disabled={ending}
+                      aria-label="End the active FlowQuest session"
                     >
-                      END
+                      {ending ? 'ENDING…' : 'END'}
                     </button>
                   </div>
                 </div>
@@ -510,6 +540,20 @@ export default function Dashboard() {
               </div>
 
               <div className="mb-6 h-48 w-full">
+                {historyApi.loading ? (
+                  <div className="flex h-full items-center justify-center text-xs" style={{ color: COLORS.textMuted }}>
+                    Loading your trust history…
+                  </div>
+                ) : chartData.length === 0 ? (
+                  <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
+                    <p className="text-sm font-medium" style={{ color: COLORS.textSecondary }}>
+                      No trust history yet
+                    </p>
+                    <p className="text-xs" style={{ color: COLORS.textMuted }}>
+                      Check in and run a FlowQuest to start building your score.
+                    </p>
+                  </div>
+                ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                     <defs>
@@ -534,6 +578,7 @@ export default function Dashboard() {
                     <Area type="monotone" dataKey="score" stroke={COLORS.brandGold} strokeWidth={2} fill="url(#trustFill)" dot={false} activeDot={{ r: 4, fill: COLORS.brandGold }} />
                   </AreaChart>
                 </ResponsiveContainer>
+                )}
               </div>
 
               {/* Key Stats */}
@@ -593,6 +638,11 @@ export default function Dashboard() {
               <h3 className="mb-4 text-xl font-semibold tracking-wide" style={{ fontFamily: 'Bebas Neue, sans-serif', color: COLORS.textPrimary }}>
                 RECENT MOVES
               </h3>
+              {!historyApi.loading && !activityApi.loading && activities.length === 0 && (
+                <p className="text-sm" style={{ color: COLORS.textMuted }}>
+                  No recent activity yet. Your check-ins and score changes will show up here.
+                </p>
+              )}
               <div className="flex flex-col gap-3">
                 {activities.map((act, i) => (
                   <motion.div
@@ -724,15 +774,21 @@ export default function Dashboard() {
                     ? 'Caution level. Trauma history on file. Check in daily.'
                     : 'Critical level. Immediate intervention needed.'}
               </p>
-              <button
-                className="mt-3 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
-                style={{ background: `${COLORS.brandGold}15`, color: COLORS.brandGold, border: `1px solid ${COLORS.brandGold}40` }}
-              >
-                Run Tactical Reset
-              </button>
-              <p className="mt-2 text-xs" style={{ color: COLORS.textMuted }}>
-                Yellow since Mar 1
-              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setResetOpen(true)}
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
+                  style={{ background: `${COLORS.brandGold}15`, color: COLORS.brandGold, border: `1px solid ${COLORS.brandGold}40` }}
+                >
+                  Run Tactical Reset
+                </button>
+                {safeHarbor !== 'green' && <GetHelpButton />}
+              </div>
+              {safeHarbor === 'red' && (
+                <p className="mt-2 text-xs" style={{ color: COLORS.safeRed }}>
+                  If you&apos;re in danger or thinking about hurting yourself, use Get Help now.
+                </p>
+              )}
             </motion.div>
 
             {/* Tactical Actions */}
@@ -773,6 +829,8 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
+
+      <TacticalReset open={resetOpen} onOpenChange={setResetOpen} />
     </div>
   )
 }
